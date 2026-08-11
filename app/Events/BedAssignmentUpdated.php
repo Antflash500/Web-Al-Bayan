@@ -1,0 +1,74 @@
+<?php
+
+namespace App\Events;
+
+use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Queue\SerializesModels;
+
+class BedAssignmentUpdated implements ShouldBroadcast
+{
+    use Dispatchable;
+    use InteractsWithSockets;
+    use SerializesModels;
+
+    public int $userId;
+
+    public ?int $kamarId;
+
+    public ?int $ranjangId;
+
+    public ?string $kamarNomor;
+
+    public ?string $ranjangNomor;
+
+    public string $status;
+
+    public string $action;
+
+    public function __construct(
+        int $userId,
+        ?int $kamarId,
+        ?int $ranjangId,
+        ?string $kamarNomor,
+        ?string $ranjangNomor,
+        string $status = 'assigned',
+        string $action = 'assigned'
+    ) {
+        $this->userId = $userId;
+        $this->kamarId = $kamarId;
+        $this->ranjangId = $ranjangId;
+        $this->kamarNomor = $kamarNomor;
+        $this->ranjangNomor = $ranjangNomor;
+        $this->status = $status;
+        $this->action = $action;
+    }
+
+    public function broadcastOn(): array
+    {
+        return [
+            new PrivateChannel("user.{$this->userId}"),
+            new PrivateChannel('admin'),
+        ];
+    }
+
+    public function broadcastAs(): string
+    {
+        return 'BedAssignmentUpdated';
+    }
+
+    public function broadcastWith(): array
+    {
+        return [
+            'userId' => $this->userId,
+            'kamarId' => $this->kamarId,
+            'ranjangId' => $this->ranjangId,
+            'kamarNomor' => $this->kamarNomor,
+            'ranjangNomor' => $this->ranjangNomor,
+            'status' => $this->status,
+            'action' => $this->action,
+        ];
+    }
+}
