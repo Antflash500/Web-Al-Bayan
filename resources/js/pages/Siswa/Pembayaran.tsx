@@ -11,7 +11,6 @@ import {
     CreditCard,
     Download,
     LockKeyhole,
-    MapPinned,
     Upload,
     X,
     XCircle,
@@ -33,6 +32,11 @@ interface TransaksiItem {
 
 const REKENING = '0241556254';
 
+const resolveMethod = (metode?: string | null): 'transfer' | 'qris' => {
+    const value = (metode ?? '').toLowerCase();
+    return value.includes('qris') ? 'qris' : 'transfer';
+};
+
 export default function Pembayaran({ transaksi }: { transaksi: TransaksiItem[] }) {
     const [paying, setPaying] = useState<TransaksiItem | null>(null);
     const [method, setMethod] = useState<'transfer' | 'qris'>('transfer');
@@ -51,8 +55,9 @@ export default function Pembayaran({ transaksi }: { transaksi: TransaksiItem[] }
 
     useEffect(() => {
         if (paying) {
-            setMethod('transfer');
-            setData('metode', 'transfer');
+            const selected = resolveMethod(paying.metode_pembayaran);
+            setMethod(selected);
+            setData('metode', selected);
             setPreview(null);
             reset('bukti');
         }
@@ -75,11 +80,6 @@ export default function Pembayaran({ transaksi }: { transaksi: TransaksiItem[] }
         if (preview) URL.revokeObjectURL(preview);
         setPreview(URL.createObjectURL(file));
         e.target.value = '';
-    };
-
-    const selectMethod = (m: 'transfer' | 'qris') => {
-        setMethod(m);
-        setData('metode', m);
     };
 
     const submitProof = () => {
@@ -264,37 +264,21 @@ export default function Pembayaran({ transaksi }: { transaksi: TransaksiItem[] }
                             </button>
                         </div>
 
-                        <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-surface p-1.5">
-                            <button
-                                type="button"
-                                onClick={() => selectMethod('transfer')}
-                                className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition ${
-                                    method === 'transfer'
-                                        ? 'bg-primary text-white shadow-soft'
-                                        : 'text-muted hover:text-foreground'
-                                }`}
-                            >
-                                <Banknote className="size-4" /> Transfer
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => selectMethod('qris')}
-                                className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition ${
-                                    method === 'qris'
-                                        ? 'bg-primary text-white shadow-soft'
-                                        : 'text-muted hover:text-foreground'
-                                }`}
-                            >
-                                <MapPinned className="size-4" /> QRIS
-                            </button>
-                        </div>
-
-                        {method === 'transfer' ? (
-                            <div className="rounded-2xl border border-border bg-surface/50 p-5">
-                                <div className="flex flex-col gap-3">
-                                    <div>
-                                        <span className="text-xs font-semibold text-muted">No Rek</span>
-                                        <div className="mt-1 flex items-center gap-2">
+                        <div className="mt-5 rounded-2xl border border-border bg-surface/50 p-4">
+                            {method === 'transfer' ? (
+                                <div className="flex items-center gap-4">
+                                    <img
+                                        src="/images/BCA.png"
+                                        alt="Bank BCA"
+                                        className="size-16 shrink-0 rounded-xl object-contain"
+                                    />
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <Banknote className="size-4 text-primary" />
+                                            <span className="text-xs font-semibold text-muted">Metode: Bank Transfer</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-semibold text-muted">No. Rek</span>
                                             <span className="font-mono text-sm font-bold text-foreground">
                                                 {REKENING}
                                             </span>
@@ -310,31 +294,31 @@ export default function Pembayaran({ transaksi }: { transaksi: TransaksiItem[] }
                                                 )}
                                             </button>
                                         </div>
-                                    </div>
-                                    <div className="flex items-center gap-2.5">
-                                        <Building2 className="size-5 text-primary" />
-                                        <span className="text-sm font-semibold text-foreground">
-                                            Atas Nama Wira Yafi Baswara
-                                        </span>
+                                        <div className="flex items-center gap-2.5">
+                                            <Building2 className="size-5 text-primary" />
+                                            <span className="text-sm font-semibold text-foreground">
+                                                Atas Nama Wira Yafi Baswara
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="mt-5 rounded-2xl border border-border bg-surface/50 p-5">
-                                <p className="text-sm leading-relaxed text-foreground">
-                                    <b>Scan di bawah untuk bayar ya.</b> Setelah berhasil, jangan
-                                    lupa <b>screenshot</b> buktinya lalu{' '}
-                                    <b>upload di bawah</b>.
-                                </p>
-                                <div className="mx-auto mt-4 overflow-hidden rounded-2xl border border-border bg-white p-3">
-                                    <img
-                                        src="/images/QRIS.png"
-                                        alt="QRIS pembayaran"
-                                        className="w-full object-contain"
-                                    />
+                            ) : (
+                                <div>
+                                    <p className="text-sm leading-relaxed text-foreground">
+                                        <b>Scan di bawah untuk bayar ya.</b> Setelah berhasil, jangan
+                                        lupa <b>screenshot</b> buktinya lalu{' '}
+                                        <b>upload di bawah</b>.
+                                    </p>
+                                    <div className="mx-auto mt-4 overflow-hidden rounded-2xl border border-border bg-white p-3">
+                                        <img
+                                            src="/images/QRIS.png"
+                                            alt="QRIS pembayaran"
+                                            className="w-full object-contain"
+                                        />
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
 
                         <div className="mt-4">
                             <label className="mb-2 block text-xs font-bold text-foreground">
