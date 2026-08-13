@@ -7,9 +7,11 @@ import {
     CheckCircle2,
     Clock,
     Cpu,
+    FileCheck,
     Fingerprint,
     Globe,
     HardDrive,
+    HeartPulse,
     KeyRound,
     Lock,
     LogOut,
@@ -36,17 +38,21 @@ import type {
     ActiveSession,
     BannedIp,
     DeviceSummary,
+    HealthCheck,
+    IntegrityFile,
     MetricPoint,
+    PasswordAudit,
     PortScan,
     PortScanResult,
     SecurityLogEntry,
     SecurityPosture,
     SecuritySummary,
     ServerStatus,
+    VulnerabilityScans,
     WafSelfTest,
 } from '@/types/models';
 
-type Tab = 'ringkasan' | 'monitoring' | 'login' | 'ports' | 'firewall';
+type Tab = 'ringkasan' | 'monitoring' | 'login' | 'ports' | 'firewall' | 'integritas' | 'scanner';
 
 const TABS: { key: Tab; label: string; icon: typeof Activity }[] = [
     { key: 'ringkasan', label: 'Ringkasan', icon: Activity },
@@ -54,6 +60,8 @@ const TABS: { key: Tab; label: string; icon: typeof Activity }[] = [
     { key: 'login', label: 'Aktivitas Login', icon: Fingerprint },
     { key: 'ports', label: 'Scanner Port', icon: ScanSearch },
     { key: 'firewall', label: 'Firewall IP', icon: ShieldCheck },
+    { key: 'scanner', label: 'Scanner Serangan', icon: ShieldAlert },
+    { key: 'integritas', label: 'Integritas & CIA', icon: FileCheck },
 ];
 
 const RISK_TONE: Record<PortScanResult['risiko'], string> = {
@@ -352,7 +360,14 @@ function LoginHistoryTable({ history }: { history: SecurityLogEntry[] }) {
                                         </span>
                                         <div className="min-w-0">
                                             <p className="truncate font-medium text-foreground">{log.nama}</p>
-                                            <RoleBadge role={log.role} />
+                                            <div className="flex items-center gap-1.5">
+                                                <RoleBadge role={log.role} />
+                                                {log.perangkat_baru && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
+                                                        <AlertTriangle className="size-3" /> Perangkat baru
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </td>
@@ -1004,6 +1019,407 @@ function SelfTestPanel({ selfTest }: { selfTest?: WafSelfTest | null }) {
     );
 }
 
+function IntegrityPanel({ files }: { files: IntegrityFile[] }) {
+    const [rebuilding, setRebuilding] = useState(false);
+
+    const rebuild = () => {
+        if (!confirm('Buat ulang baseline checksum terhadap berkas saat ini?')) return;
+        setRebuilding(true);
+        router.post('/admin/security/integrity/rebuild', {}, {
+            preserveScroll: true,
+            onFinish: () => setRebuilding(false),
+        });
+    };
+
+    const ok = files.filter((f) => f.status === 'ok').length;
+    const unmonitored = files.filter((f) => f.status === 'unmonitored').length;
+    const modified = files.filter((f) => f.status === 'modified').length;
+
+    return (
+        <section className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-white shadow-soft">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border px-5 py-4">
+                <div>
+                    <h2 className="flex items-center gap-2 font-display text-lg text-foreground">
+                        <FileCheck className="size-5 text-secondary" /> Integritas Berkas (SHA-256)
+                    </h2>
+                    <p className="mt-0.5 text-xs text-muted">
+                        Baseline checksum berkas sumber, konfigurasi, rute, dan .env — perubahan tak wajar akan terdeteksi.
+                    </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/10 px-3 py-1 text-xs font-semibold text-secondary">
+                        <CheckCircle2 className="size-3.5" /> {ok} utuh
+                    </span>
+                    {modified > 0 && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-danger/10 px-3 py-1 text-xs font-semibold text-danger">
+                            <AlertTriangle className="size-3.5" /> {modified} berubah
+                        </span>
+                    )}
+                    {unmonitored > 0 && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-3 py-1 text-xs font-semibold text-warning">
+                            <Clock className="size-3.5" /> {unmonitored} belum baseline
+                        </span>
+                    )}
+                    <button
+                        type="button"
+                        onClick={rebuild}
+                        disabled={rebuilding}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-button)] border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <RefreshCcw className={cn('size-3.5', rebuilding && 'animate-spin')} />
+                        {rebuilding ? 'Membangun...' : 'Rebuild Baseline'}
+                    </button>
+                </div>
+            </div>
+
+            {files.length === 0 ? (
+                <div className="px-6 py-14 text-center text-sm text-muted">
+                    Belum ada data baseline. Jalankan <code className="rounded bg-surface px-1.5 py-0.5">php artisan security:integrity</code>.
+                </div>
+            ) : (
+                <ul className="max-h-96 divide-y divide-border overflow-y-auto">
+                    {files.map((f) => (
+                        <li key={f.path} className="flex items-center gap-3 px-5 py-2.5">
+                            {f.status === 'ok' ? (
+                                <CheckCircle2 className="size-4 shrink-0 text-secondary" />
+                            ) : f.status === 'modified' ? (
+                                <XCircle className="size-4 shrink-0 text-danger" />
+                            ) : (
+                                <AlertTriangle className="size-4 shrink-0 text-warning" />
+                            )}
+                            <code className="min-w-0 flex-1 truncate text-xs text-foreground">{f.path}</code>
+                            <span
+                                className={cn(
+                                    'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize',
+                                    f.status === 'ok' && 'bg-secondary/10 text-secondary',
+                                    f.status === 'modified' && 'bg-danger/10 text-danger',
+                                    f.status === 'missing' && 'bg-danger/10 text-danger',
+                                    (f.status === 'unmonitored' || f.status === 'missing') && 'bg-warning/10 text-warning'
+                                )}
+                            >
+                                {f.status}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
+    );
+}
+
+function HealthPanel({ health }: { health: HealthCheck[] }) {
+    const [running, setRunning] = useState(false);
+
+    const run = () => {
+        setRunning(true);
+        router.post('/admin/security/health', {}, {
+            preserveScroll: true,
+            onFinish: () => setRunning(false),
+        });
+    };
+
+    const ok = health.filter((c) => c.ok).length;
+
+    return (
+        <section className="rounded-[var(--radius-card)] border border-border bg-white p-6 shadow-soft">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h2 className="flex items-center gap-2 font-display text-lg text-foreground">
+                        <HeartPulse className="size-5 text-secondary" /> Ketersediaan Komponen (Availability)
+                    </h2>
+                    <p className="mt-0.5 text-xs text-muted">
+                        Kesehatan database, cache, penyimpanan, scheduler, dan antrian aplikasi.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={run}
+                    disabled={running}
+                    className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-[var(--radius-button)] bg-primary px-4 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    <RefreshCcw className={cn('size-4', running && 'animate-spin')} />
+                    {running ? 'Memeriksa...' : 'Uji Sekarang'}
+                </button>
+            </div>
+
+            <ul className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {health.map((c) => (
+                    <li
+                        key={c.key}
+                        className="flex items-start gap-3 rounded-xl border border-border bg-surface/40 p-4"
+                    >
+                        {c.ok ? (
+                            <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-secondary" />
+                        ) : (
+                            <XCircle className="mt-0.5 size-5 shrink-0 text-danger" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-foreground">{c.label}</p>
+                                <span
+                                    className={cn(
+                                        'rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                                        c.ok ? 'bg-secondary/10 text-secondary' : 'bg-danger/10 text-danger'
+                                    )}
+                                >
+                                    {c.ok ? 'Sehat' : 'Bermasalah'}
+                                </span>
+                            </div>
+                            <p className="mt-0.5 break-all text-xs text-muted" title={c.hint}>{c.value}</p>
+                            {!c.ok && <p className="mt-1 text-xs text-danger">{c.hint}</p>}
+                        </div>
+                    </li>
+                ))}
+            </ul>
+
+            <p className="mt-4 text-xs text-muted">
+                Hasil pemeriksaan on-the-fly. Jika semuanya sehat ({ok}/{health.length}) aplikasi beroperasi normal.
+            </p>
+        </section>
+    );
+}
+
+function VulnerabilityPanel({ scans }: { scans: VulnerabilityScans }) {
+    const [scanning, setScanning] = useState<'cve' | 'malware' | null>(null);
+
+    const run = (kind: 'cve' | 'malware') => {
+        setScanning(kind);
+        router.post(`/admin/security/${kind}-scan`, {}, {
+            preserveScroll: true,
+            onFinish: () => setScanning(null),
+        });
+    };
+
+    const renderScan = (scan: VulnerabilityScans['cve']) => {
+        if (!scan) {
+            return (
+                <div className="mt-6 grid place-items-center rounded-xl border border-dashed border-border bg-surface/40 px-6 py-10 text-center">
+                    <ShieldCheck className="size-8 text-muted" />
+                    <p className="mt-2 text-sm text-muted">Belum pernah dipindai. Klik tombol di kanan atas.</p>
+                </div>
+            );
+        }
+
+        const statusBadge =
+            scan.status === 'clean' ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/10 px-3 py-1 text-xs font-semibold text-secondary">
+                    <CheckCircle2 className="size-3.5" /> Bersih
+                </span>
+            ) : scan.status === 'error' ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-danger/10 px-3 py-1 text-xs font-semibold text-danger">
+                    <XCircle className="size-3.5" /> Gagal
+                </span>
+            ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-3 py-1 text-xs font-semibold text-warning">
+                    <AlertTriangle className="size-3.5" /> Ada Temuan
+                </span>
+            );
+
+        return (
+            <div className="mt-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-surface/40 px-4 py-3">
+                    <p className="min-w-0 flex-1 text-sm text-foreground">{scan.summary}</p>
+                    {statusBadge}
+                    <span className="shrink-0 text-xs text-muted">{scan.scanned_at ? fmtTime(scan.scanned_at) : ''}</span>
+                </div>
+
+                {(scan.findings ?? []).length > 0 ? (
+                    <div className="mt-4 overflow-hidden rounded-xl border border-border">
+                        <table className="w-full text-left text-sm">
+                            <thead>
+                                <tr className="border-b border-border bg-surface/60 text-xs uppercase tracking-wider text-muted">
+                                    {scan.scanner === 'cve' ? (
+                                        <>
+                                            <th scope="col" className="px-4 py-3 font-semibold">Paket</th>
+                                            <th scope="col" className="px-4 py-3 font-semibold">Advisori</th>
+                                            <th scope="col" className="px-4 py-3 font-semibold">Severity</th>
+                                            <th scope="col" className="px-4 py-3 font-semibold">Referensi</th>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <th scope="col" className="px-4 py-3 font-semibold">Berkas</th>
+                                            <th scope="col" className="px-4 py-3 font-semibold">Pola</th>
+                                            <th scope="col" className="px-4 py-3 font-semibold">Baris</th>
+                                        </>
+                                    )}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {(scan.findings ?? []).map((f, i) => (
+                                    <tr key={i} className="align-top transition hover:bg-surface/40">
+                                        {scan.scanner === 'cve' ? (
+                                            <>
+                                                <td className="px-4 py-3">
+                                                    <code className="rounded-md bg-surface px-2 py-1 text-xs text-foreground">{f.package}</code>
+                                                    {f.cve && <p className="mt-1 text-[11px] font-medium text-danger">{f.cve}</p>}
+                                                </td>
+                                                <td className="max-w-sm px-4 py-3 text-xs text-foreground">
+                                                    <p className="font-medium">{f.title}</p>
+                                                    {f.affected && <p className="mt-1 text-muted">Versi: {f.affected}</p>}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span
+                                                        className={cn(
+                                                            'rounded-full px-2.5 py-1 text-xs font-medium uppercase',
+                                                            f.severity === 'high' && 'bg-danger/10 text-danger',
+                                                            f.severity === 'medium' && 'bg-warning/10 text-warning',
+                                                            f.severity === 'low' && 'bg-info/10 text-info',
+                                                            !f.severity && 'bg-surface text-muted'
+                                                        )}
+                                                    >
+                                                        {f.severity ?? 'unknown'}
+                                                    </span>
+                                                </td>
+                                                <td className="max-w-[180px] px-4 py-3">
+                                                    {f.link ? (
+                                                        <a
+                                                            href={f.link}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="break-all text-xs text-secondary underline-offset-2 hover:underline"
+                                                        >
+                                                            {f.link}
+                                                        </a>
+                                                    ) : (
+                                                        <span className="text-xs text-muted">—</span>
+                                                    )}
+                                                </td>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <td className="max-w-xs px-4 py-3">
+                                                    <code className="break-all text-xs text-foreground">{f.file}</code>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className="rounded-full bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning">
+                                                        {f.pattern}
+                                                    </span>
+                                                    <p className="mt-1 max-w-xs text-[11px] text-muted">{f.desc}</p>
+                                                </td>
+                                                <td className="px-4 py-3 text-xs text-muted">{f.line ?? '—'}</td>
+                                            </>
+                                        )}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <div className="mt-4 grid place-items-center rounded-xl border border-dashed border-border bg-surface/40 px-6 py-8 text-center">
+                        <CheckCircle2 className="size-8 text-secondary" />
+                        <p className="mt-2 text-sm text-muted">Tidak ada temuan pada pemindaian terakhir.</p>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    return (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <section className="rounded-[var(--radius-card)] border border-border bg-white p-6 shadow-soft">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 className="flex items-center gap-2 font-display text-lg text-foreground">
+                            <KeyRound className="size-5 text-danger" /> Scan CVE Dependensi
+                        </h2>
+                        <p className="mt-0.5 text-xs text-muted">
+                            Periksa paket Composer (vendor) terhadap advisori keamanan yang diketahui via{' '}
+                            <code className="rounded bg-surface px-1 py-0.5 text-[11px]">composer audit</code>.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => run('cve')}
+                        disabled={scanning !== null}
+                        className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-[var(--radius-button)] bg-primary px-4 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <RefreshCcw className={cn('size-4', scanning === 'cve' && 'animate-spin')} />
+                        {scanning === 'cve' ? 'Memindai...' : 'Pindai CVE'}
+                    </button>
+                </div>
+                {renderScan(scans.cve)}
+            </section>
+
+            <section className="rounded-[var(--radius-card)] border border-border bg-white p-6 shadow-soft">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 className="flex items-center gap-2 font-display text-lg text-foreground">
+                            <ScanSearch className="size-5 text-warning" /> Scan Malware & Webshell
+                        </h2>
+                        <p className="mt-0.5 text-xs text-muted">
+                            Pindai berkas kode aplikasi untuk pola backdoor, webshell, dan fungsi sistem yang mencurigakan.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => run('malware')}
+                        disabled={scanning !== null}
+                        className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-[var(--radius-button)] bg-primary px-4 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <RefreshCcw className={cn('size-4', scanning === 'malware' && 'animate-spin')} />
+                        {scanning === 'malware' ? 'Memindai...' : 'Pindai Malware'}
+                    </button>
+                </div>
+                {renderScan(scans.malware)}
+            </section>
+        </div>
+    );
+}
+
+function PasswordAuditPanel({ audit }: { audit: PasswordAudit }) {    return (
+        <section className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-white shadow-soft">
+            <div className="border-b border-border px-5 py-4">
+                <h2 className="flex items-center gap-2 font-semibold text-foreground">
+                    <KeyRound className="size-4 text-warning" /> Audit Kekuatan Password (Confidentiality)
+                </h2>
+                <p className="mt-0.5 text-xs text-muted">
+                    Deteksi akun dengan hash password lemah (SHA/MD5/plain) yang perlu di-reset.
+                </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 border-b border-border px-5 py-4 sm:grid-cols-4">
+                <div className="rounded-xl bg-surface/60 p-3">
+                    <p className="font-display text-2xl text-foreground">{audit.total}</p>
+                    <p className="text-xs text-muted">Total akun</p>
+                </div>
+                <div className="rounded-xl bg-secondary/10 p-3">
+                    <p className="font-display text-2xl text-secondary">{audit.strong}</p>
+                    <p className="text-xs text-muted">Hash kuat (bcrypt/argon)</p>
+                </div>
+                <div className={cn('rounded-xl p-3', audit.weak > 0 ? 'bg-danger/10' : 'bg-surface/60')}>
+                    <p className={cn('font-display text-2xl', audit.weak > 0 ? 'text-danger' : 'text-foreground')}>{audit.weak}</p>
+                    <p className="text-xs text-muted">Hash lemah</p>
+                </div>
+                <div className="rounded-xl bg-surface/60 p-3">
+                    <p className="font-display text-2xl text-foreground">{audit.tanpa_password}</p>
+                    <p className="text-xs text-muted">Tanpa password</p>
+                </div>
+            </div>
+
+            {audit.weak_users.length === 0 ? (
+                <div className="px-6 py-10 text-center text-sm text-muted">
+                    <ShieldCheck className="mx-auto size-8 text-secondary" />
+                    <p className="mt-2">Tidak ada akun dengan hash password lemah.</p>
+                </div>
+            ) : (
+                <ul className="divide-y divide-border">
+                    {audit.weak_users.map((u) => (
+                        <li key={u.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-foreground">{u.nama}</p>
+                                <p className="text-xs text-muted">Akun #{u.id}</p>
+                            </div>
+                            <span className="shrink-0 rounded-full bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger">
+                                {u.hash_algo}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
+    );
+}
+
 export default function Security({
     summary,
     sessions,
@@ -1015,6 +1431,10 @@ export default function Security({
     events,
     bannedIps,
     posture,
+    integrity,
+    health,
+    passwordAudit,
+    vulnerabilityScans,
     flash,
 }: {
     summary: SecuritySummary;
@@ -1027,6 +1447,10 @@ export default function Security({
     events: SecurityLogEntry[];
     bannedIps: BannedIp[];
     posture: SecurityPosture;
+    integrity: IntegrityFile[];
+    health: HealthCheck[];
+    passwordAudit: PasswordAudit;
+    vulnerabilityScans: VulnerabilityScans;
     portScan?: PortScan | null;
     flash?: { success?: string; error?: string };
 }) {
@@ -1105,6 +1529,14 @@ export default function Security({
                 {tab === 'login' && <LoginHistoryTable history={loginHistory} />}
                 {tab === 'ports' && <PortScanner />}
                 {tab === 'firewall' && <FirewallPanel bannedIps={bannedIps} events={events} />}
+                {tab === 'scanner' && <VulnerabilityPanel scans={vulnerabilityScans} />}
+                {tab === 'integritas' && (
+                    <div className="space-y-6">
+                        <IntegrityPanel files={integrity} />
+                        <HealthPanel health={health} />
+                        <PasswordAuditPanel audit={passwordAudit} />
+                    </div>
+                )}
             </div>
         </AdminLayout>
     );

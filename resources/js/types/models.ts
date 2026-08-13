@@ -230,6 +230,7 @@ export interface SecurityLogEntry {
     keterangan: string | null;
     path: string | null;
     waktu: string;
+    perangkat_baru?: boolean;
 }
 
 export interface BannedIp {
@@ -320,4 +321,54 @@ export interface WafSelfTest {
     total: number;
     diblokir: number;
     results: SelfTestResult[];
+}
+
+export interface IntegrityFile {
+    path: string;
+    status: 'ok' | 'modified' | 'missing' | 'unmonitored';
+    checksum: string | null;
+    size: number | null;
+}
+
+export interface HealthCheck {
+    key: string;
+    label: string;
+    ok: boolean;
+    value: string;
+    hint: string;
+}
+
+export interface PasswordAudit {
+    total: number;
+    weak: number;
+    strong: number;
+    tanpa_password: number;
+    weak_users: { id: number; nama: string; hash_algo: string }[];
+}
+
+export interface VulnerabilityFinding {
+    file?: string;
+    pattern?: string;
+    desc?: string;
+    line?: number;
+    package?: string;
+    title?: string;
+    severity?: string;
+    link?: string | null;
+    affected?: string | null;
+    cve?: string | null;
+}
+
+export interface VulnerabilityScanResult {
+    id: number;
+    scanner: string;
+    status: 'clean' | 'issues' | 'error';
+    summary: string | null;
+    findings: VulnerabilityFinding[] | null;
+    scanned_at: string | null;
+}
+
+export interface VulnerabilityScans {
+    cve: VulnerabilityScanResult | null;
+    malware: VulnerabilityScanResult | null;
 }

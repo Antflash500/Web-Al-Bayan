@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\SecurityService;
+use App\Services\VulnerabilityScanner;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -27,6 +28,10 @@ class SecurityController extends Controller
             'events' => $this->security->events(),
             'bannedIps' => $this->security->bannedIps(),
             'posture' => $this->security->securityPosture(),
+            'integrity' => $this->security->fileIntegrityStatus(),
+            'health' => $this->security->systemHealth(),
+            'passwordAudit' => $this->security->passwordHashAudit(),
+            'vulnerabilityScans' => $this->security->vulnerabilityScans(),
             'portScan' => $request->session()->get('port_scan'),
             'selfTest' => $request->session()->get('self_test'),
         ]);
@@ -109,6 +114,44 @@ class SecurityController extends Controller
         $this->security->unbanIp($data['ip']);
 
         return back()->with('success', "IP {$data['ip']} dihapus dari daftar banned.");
+    }
+
+    public function rebuildIntegrity(): SymfonyResponse
+    {
+        $count = $this->security->rebuildFileIntegrityBaseline();
+
+        return back()->with('success', "Baseline integritas dibangun ulang untuk {$count} berkas.");
+    }
+
+    public function runHealth(): SymfonyResponse
+    {
+        $health = $this->security->systemHealth();
+
+        $passed = count(array_filter($health, fn (array $check) => (bool) $check['ok']));
+
+        return back()->with('success', "Health check selesai: {$passed} dari ".count($health).' komponen sehat.');
+    }
+
+    public function scanCve(VulnerabilityScanner $scanner): SymfonyResponse
+    {
+        $scan = $scanner->scanCve();
+
+        $level = match ($scan->status) {
+            'clean' => 'success',
+            'error' => 'error',
+            default => 'warning',
+        };
+
+        return back()->with($level, $scan->summary);
+    }
+
+    public function scanMalware(VulnerabilityScanner $scanner): SymfonyResponse
+    {
+        $scan = $scanner->scanMalware();
+
+        $level = $scan->status === 'clean' ? 'success' : 'warning';
+
+        return back()->with($level, $scan->summary);
     }
 
     public function exportCsv(): StreamedResponse
