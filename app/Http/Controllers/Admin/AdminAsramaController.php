@@ -6,9 +6,11 @@ use App\Events\BedAssignmentUpdated;
 use App\Events\RoomUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Kamar;
+use App\Models\Kasur;
 use App\Models\PenempatanAsrama;
 use App\Models\Ranjang;
 use App\Models\RiwayatPenempatan;
+use App\Models\Rumah;
 use App\Models\User;
 use App\Services\AsramaService;
 use App\Support\SafeBroadcast;
@@ -23,59 +25,75 @@ class AdminAsramaController extends Controller
 
     public function index(Request $request): Response
     {
-        $rooms = Kamar::with(['ranjang.penempatanAktif.user.profile', 'ranjang.penempatanAktif.user.siswaPrograms.program'])
-            ->orderBy('nomor_kamar')
+        $rumahList = Rumah::with(['kamar.ranjang.kasur.penempatanAktif.user.profile', 'kamar.ranjang.kasur.penempatanAktif.user.siswaPrograms.program'])
+            ->orderBy('nama')
             ->get();
 
-        $totalKamar = $rooms->count();
+        $totalRumah = $rumahList->count();
+        $totalKamar = Kamar::count();
         $totalRanjang = Ranjang::count();
-        $terisi = Ranjang::where('status', 'terisi')->count();
-        $tersedia = Ranjang::where('status', 'tersedia')->count();
+        $totalKasur = Kasur::count();
+        $terisi = Kasur::where('status', 'terisi')->count();
+        $tersedia = Kasur::where('status', 'tersedia')->count();
 
-        $roomsData = $rooms->map(function ($room) {
+        $rumahData = $rumahList->map(function ($rumah) {
             return [
-                'id' => $room->id,
-                'nomor_kamar' => $room->nomor_kamar,
-                'status' => $room->status,
-                'keterangan' => $room->keterangan,
-                'ranjang' => $room->ranjang->map(function ($ranjang) {
-                    $penempatan = $ranjang->penempatanAktif;
-                    $student = null;
-                    if ($penempatan && $penempatan->user) {
-                        $user = $penempatan->user;
-                        // Find active programs
-                        $activeProgram = $user->siswaPrograms->first()?->program?->nama_program ?? '-';
-
-                        // Check if online (activity within last 2 minutes)
-                        $isOnline = $user->last_activity_at && $user->last_activity_at->gt(now()->subMinutes(2));
-
-                        $student = [
-                            'id' => $user->id,
-                            'name' => $user->name ?? $user->profile?->full_name ?? 'Siswa',
-                            'email' => $user->email,
-                            'program' => $activeProgram,
-                            'is_online' => (bool) $isOnline,
-                        ];
-                    }
-
+                'id' => $rumah->id,
+                'nama' => $rumah->nama,
+                'status' => $rumah->status,
+                'keterangan' => $rumah->keterangan,
+                'kamar' => $rumah->kamar->map(function ($room) {
                     return [
-                        'id' => $ranjang->id,
-                        'nomor_ranjang' => sprintf('%02d', $ranjang->nomor_ranjang),
-                        'status' => $ranjang->status,
-                        'student' => $student,
+                        'id' => $room->id,
+                        'nomor_kamar' => $room->nomor_kamar,
+                        'status' => $room->status,
+                        'keterangan' => $room->keterangan,
+                        'ranjang' => $room->ranjang->map(function ($ranjang) {
+                            return [
+                                'id' => $ranjang->id,
+                                'nomor_ranjang' => sprintf('%02d', $ranjang->nomor_ranjang),
+                                'status' => $ranjang->status,
+                                'kasur' => $ranjang->kasur->map(function ($kasur) {
+                                    $penempatan = $kasur->penempatanAktif;
+                                    $student = null;
+                                    if ($penempatan && $penempatan->user) {
+                                        $user = $penempatan->user;
+                                        $activeProgram = $user->siswaPrograms->first()?->program?->nama_program ?? '-';
+                                        $isOnline = $user->last_activity_at && $user->last_activity_at->gt(now()->subMinutes(2));
+
+                                        $student = [
+                                            'id' => $user->id,
+                                            'name' => $user->name ?? $user->profile?->full_name ?? 'Siswa',
+                                            'email' => $user->email,
+                                            'program' => $activeProgram,
+                                            'is_online' => (bool) $isOnline,
+                                        ];
+                                    }
+
+                                    return [
+                                        'id' => $kasur->id,
+                                        'posisi' => $kasur->posisi,
+                                        'status' => $kasur->status,
+                                        'student' => $student,
+                                    ];
+                                })->values(),
+                            ];
+                        })->values(),
                     ];
-                }),
+                })->values(),
             ];
-        });
+        })->values();
 
         return Inertia::render('Admin/Asrama', [
             'stats' => [
+                'totalRumah' => $totalRumah,
                 'totalKamar' => $totalKamar,
                 'totalRanjang' => $totalRanjang,
+                'totalKasur' => $totalKasur,
                 'terisi' => $terisi,
                 'tersedia' => $tersedia,
             ],
-            'rooms' => $roomsData,
+            'rumah' => $rumahData,
         ]);
     }
 
@@ -117,26 +135,30 @@ class AdminAsramaController extends Controller
     {
         $request->validate([
             'user_id' => ['required', 'exists:users,id'],
-            'ranjang_id' => ['required', 'exists:ranjang,id'],
+            'kasur_id' => ['required', 'exists:kasur,id'],
         ]);
 
         $user = User::findOrFail($request->input('user_id'));
-        $ranjangId = $request->input('ranjang_id');
+        $kasurId = $request->input('kasur_id');
 
         try {
-            $penempatan = $this->asramaService->assignManualBed($user, $ranjangId, auth()->user());
+            $penempatan = $this->asramaService->assignManualBed($user, $kasurId, auth()->user());
 
-            $kamar = $penempatan->kamar;
-            $terisi = Ranjang::where('kamar_id', $kamar->id)->where('status', 'terisi')->count();
-            $tersedia = Ranjang::where('kamar_id', $kamar->id)->where('status', 'tersedia')->count();
-            $totalRanjang = Ranjang::where('kamar_id', $kamar->id)->count();
+            $kasur = Kasur::with('ranjang.kamar')->findOrFail($kasurId);
+            $kamar = $kasur->ranjang->kamar;
+
+            $terisi = $this->kamarKasurCount($kamar->id, 'terisi');
+            $tersedia = $this->kamarKasurCount($kamar->id, 'tersedia');
+            $totalKasur = $this->kamarKasurCount($kamar->id);
 
             SafeBroadcast::run(fn () => BedAssignmentUpdated::dispatch(
                 $penempatan->user_id,
-                $penempatan->kamar_id,
-                $penempatan->ranjang_id,
-                $penempatan->kamar?->nomor_kamar,
-                sprintf('%02d', $penempatan->ranjang?->nomor_ranjang ?? 0),
+                $kamar->id,
+                $kasur->ranjang_id,
+                $kasur->id,
+                $kamar->nomor_kamar,
+                sprintf('%02d', $kasur->ranjang->nomor_ranjang),
+                $kasur->posisi,
                 'terisi',
                 'assigned'
             ));
@@ -146,62 +168,119 @@ class AdminAsramaController extends Controller
                 $kamar->nomor_kamar,
                 $terisi,
                 $tersedia,
-                $totalRanjang,
+                $totalKasur,
                 'updated'
             ));
 
-            return back()->with('message', 'Siswa berhasil ditempatkan di kamar.');
+            return back()->with('message', 'Siswa berhasil ditempatkan di kasur.');
         } catch (\Exception $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         }
     }
 
-    public function vacate(int $ranjangId)
+    public function vacate(int $kasurId)
     {
-        $ranjang = Ranjang::findOrFail($ranjangId);
+        $kasur = Kasur::with('ranjang.kamar')->findOrFail($kasurId);
 
-        $penempatanLama = PenempatanAsrama::where('ranjang_id', $ranjang->id)
+        $penempatanLama = PenempatanAsrama::where('kasur_id', $kasur->id)
             ->where('status', 'aktif')
             ->first();
 
         $userId = $penempatanLama?->user_id;
 
         try {
-            $this->asramaService->vacateBed($ranjangId);
+            $this->asramaService->vacateBed($kasurId);
+
+            $kamar = $kasur->ranjang?->kamar;
 
             SafeBroadcast::run(fn () => BedAssignmentUpdated::dispatch(
                 $userId ?? 0,
-                $ranjang->kamar_id,
-                $ranjang->id,
-                null,
-                null,
+                $kamar?->id,
+                $kasur->ranjang_id,
+                $kasur->id,
+                $kamar?->nomor_kamar,
+                $kasur->ranjang ? sprintf('%02d', $kasur->ranjang->nomor_ranjang) : null,
+                $kasur->posisi,
                 'tersedia',
                 'vacated'
             ));
 
-            $kamar = Kamar::find($ranjang->kamar_id);
-            $terisi = $kamar ? Ranjang::where('kamar_id', $kamar->id)->where('status', 'terisi')->count() : 0;
-            $tersedia = $kamar ? Ranjang::where('kamar_id', $kamar->id)->where('status', 'tersedia')->count() : 0;
-            $totalRanjang = $kamar ? Ranjang::where('kamar_id', $kamar->id)->count() : 0;
+            if ($kamar) {
+                $terisi = $this->kamarKasurCount($kamar->id, 'terisi');
+                $tersedia = $this->kamarKasurCount($kamar->id, 'tersedia');
+                $totalKasur = $this->kamarKasurCount($kamar->id);
 
-            SafeBroadcast::run(fn () => RoomUpdated::dispatch(
-                $kamar->id,
-                $kamar?->nomor_kamar,
-                $terisi,
-                $tersedia,
-                $totalRanjang,
-                'updated'
-            ));
+                SafeBroadcast::run(fn () => RoomUpdated::dispatch(
+                    $kamar->id,
+                    $kamar->nomor_kamar,
+                    $terisi,
+                    $tersedia,
+                    $totalKasur,
+                    'updated'
+                ));
+            }
 
-            return back()->with('message', 'Ranjang berhasil dikosongkan.');
+            return back()->with('message', 'Kasur berhasil dikosongkan.');
         } catch (\Exception $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         }
     }
 
+    public function storeRumah(Request $request)
+    {
+        $request->validate([
+            'nama' => ['required', 'string', 'max:64', 'unique:rumah,nama'],
+            'status' => ['required', 'string', 'in:aktif,nonaktif'],
+            'keterangan' => ['nullable', 'string'],
+        ]);
+
+        $rumah = Rumah::create([
+            'nama' => $request->input('nama'),
+            'status' => $request->input('status', 'aktif'),
+            'keterangan' => $request->input('keterangan'),
+        ]);
+
+        return back()->with('message', "Rumah {$rumah->nama} berhasil dibuat.");
+    }
+
+    public function updateRumah(Request $request, int $rumahId)
+    {
+        $rumah = Rumah::findOrFail($rumahId);
+
+        $request->validate([
+            'nama' => ['required', 'string', 'max:64', 'unique:rumah,nama,'.$rumahId],
+            'status' => ['required', 'string', 'in:aktif,nonaktif'],
+            'keterangan' => ['nullable', 'string'],
+        ]);
+
+        $rumah->update([
+            'nama' => $request->input('nama'),
+            'status' => $request->input('status', 'aktif'),
+            'keterangan' => $request->input('keterangan'),
+        ]);
+
+        return back()->with('message', "Rumah {$rumah->nama} berhasil diperbarui.");
+    }
+
+    public function destroyRumah(int $rumahId)
+    {
+        $rumah = Rumah::withCount('kamar')->findOrFail($rumahId);
+
+        if ($rumah->kamar_count > 0) {
+            return back()->withErrors([
+                'error' => 'Rumah tidak dapat dihapus karena masih memiliki kamar.',
+            ]);
+        }
+
+        $rumah->delete();
+
+        return back()->with('message', "Rumah {$rumah->nama} berhasil dihapus.");
+    }
+
     public function storeKamar(Request $request)
     {
         $request->validate([
+            'rumah_id' => ['required', 'exists:rumah,id'],
             'nomor_kamar' => ['required', 'string', 'max:32', 'unique:kamar,nomor_kamar'],
             'kapasitas' => ['required', 'integer', 'min:1', 'max:20'],
             'status' => ['required', 'string', 'in:tersedia,maintenance,nonaktif'],
@@ -210,30 +289,27 @@ class AdminAsramaController extends Controller
 
         return DB::transaction(function () use ($request) {
             $kamar = Kamar::create([
+                'rumah_id' => $request->input('rumah_id'),
                 'nomor_kamar' => $request->input('nomor_kamar'),
                 'kapasitas' => $request->input('kapasitas', 6),
                 'status' => $request->input('status', 'tersedia'),
                 'keterangan' => $request->input('keterangan'),
             ]);
 
-            for ($i = 1; $i <= $kamar->kapasitas; $i++) {
-                Ranjang::create([
-                    'kamar_id' => $kamar->id,
-                    'nomor_ranjang' => $i,
-                    'status' => 'tersedia',
-                ]);
-            }
+            $this->createRanjangKasur($kamar->id, $kamar->kapasitas);
+
+            $totalKasur = $this->kamarKasurCount($kamar->id);
 
             SafeBroadcast::run(fn () => RoomUpdated::dispatch(
                 $kamar->id,
                 $kamar->nomor_kamar,
                 0,
-                $kamar->kapasitas,
-                $kamar->kapasitas,
+                $totalKasur,
+                $totalKasur,
                 'created'
             ));
 
-            return back()->with('message', "Kamar {$kamar->nomor_kamar} berhasil dibuat dengan {$kamar->kapasitas} ranjang.");
+            return back()->with('message', "Kamar {$kamar->nomor_kamar} berhasil dibuat dengan {$kamar->kapasitas} ranjang tingkat (2 kasur per ranjang).");
         });
     }
 
@@ -242,6 +318,7 @@ class AdminAsramaController extends Controller
         $kamar = Kamar::with('ranjang')->findOrFail($kamarId);
 
         $request->validate([
+            'rumah_id' => ['required', 'exists:rumah,id'],
             'nomor_kamar' => ['required', 'string', 'max:32', 'unique:kamar,nomor_kamar,'.$kamarId],
             'kapasitas' => ['required', 'integer', 'min:1', 'max:20'],
             'status' => ['required', 'string', 'in:tersedia,maintenance,nonaktif,penuh'],
@@ -252,6 +329,7 @@ class AdminAsramaController extends Controller
             $oldKapasitas = $kamar->kapasitas;
 
             $kamar->update([
+                'rumah_id' => $request->input('rumah_id'),
                 'nomor_kamar' => $request->input('nomor_kamar'),
                 'kapasitas' => $request->input('kapasitas', 6),
                 'status' => $request->input('status', 'tersedia'),
@@ -259,13 +337,7 @@ class AdminAsramaController extends Controller
             ]);
 
             if ($kamar->kapasitas > $oldKapasitas) {
-                for ($i = $oldKapasitas + 1; $i <= $kamar->kapasitas; $i++) {
-                    Ranjang::create([
-                        'kamar_id' => $kamar->id,
-                        'nomor_ranjang' => $i,
-                        'status' => 'tersedia',
-                    ]);
-                }
+                $this->createRanjangKasur($kamar->id, $kamar->kapasitas, $oldKapasitas + 1);
             }
 
             return back()->with('message', "Kamar {$kamar->nomor_kamar} berhasil diperbarui.");
@@ -274,11 +346,15 @@ class AdminAsramaController extends Controller
 
     public function destroyKamar(int $kamarId)
     {
-        $kamar = Kamar::withCount('ranjang')->findOrFail($kamarId);
+        $kamar = Kamar::findOrFail($kamarId);
 
-        if ($kamar->ranjang_count > 0) {
+        $occupiedKasur = Kasur::whereHas('ranjang', fn ($q) => $q->where('kamar_id', $kamar->id))
+            ->where('status', 'terisi')
+            ->count();
+
+        if ($occupiedKasur > 0) {
             return back()->withErrors([
-                'error' => 'Kamar tidak dapat dihapus karena masih memiliki ranjang. Kosongkan semua ranjang terlebih dahulu.',
+                'error' => 'Kamar tidak dapat dihapus karena masih ada kasur terisi. Kosongkan semua kasur terlebih dahulu.',
             ]);
         }
 
@@ -303,12 +379,15 @@ class AdminAsramaController extends Controller
             ->limit(100)
             ->get()
             ->map(function ($r) {
+                $lama = $r->ranjangLama ? 'Kamar '.$r->ranjangLama->kamar?->nomor_kamar.' / Ranjang '.sprintf('%02d', $r->ranjangLama->nomor_ranjang).($r->posisi_lama ? ' / Kasur '.ucfirst($r->posisi_lama) : '') : 'N/A';
+                $baru = $r->ranjangBaru ? 'Kamar '.$r->ranjangBaru->kamar?->nomor_kamar.' / Ranjang '.sprintf('%02d', $r->ranjangBaru->nomor_ranjang).($r->posisi_baru ? ' / Kasur '.ucfirst($r->posisi_baru) : '') : 'N/A';
+
                 return [
                     'id' => $r->id,
                     'siswa_nama' => $r->user?->name ?? $r->user?->profile?->full_name ?? $r->user?->email ?? '-',
                     'siswa_email' => $r->user?->email ?? '-',
-                    'ranjang_lama' => $r->ranjangLama ? 'Kamar '.$r->ranjangLama->kamar?->nomor_kamar.' / Ranjang '.sprintf('%02d', $r->ranjangLama->nomor_ranjang) : 'N/A',
-                    'ranjang_baru' => $r->ranjangBaru ? 'Kamar '.$r->ranjangBaru->kamar?->nomor_kamar.' / Ranjang '.sprintf('%02d', $r->ranjangBaru->nomor_ranjang) : 'N/A',
+                    'ranjang_lama' => $lama,
+                    'ranjang_baru' => $baru,
                     'dipindah_oleh' => $r->dipindahkanOleh?->name ?? $r->dipindahkanOleh?->username ?? 'Sistem',
                     'alasan' => $r->alasan ?? '-',
                     'waktu' => $r->created_at?->format('d M Y H:i') ?? '',
@@ -318,5 +397,39 @@ class AdminAsramaController extends Controller
         return Inertia::render('Admin/RiwayatPenempatan', [
             'riwayat' => $riwayat,
         ]);
+    }
+
+    private function createRanjangKasur(int $kamarId, int $totalKapasitas, int $startFrom = 1): void
+    {
+        for ($i = $startFrom; $i <= $totalKapasitas; $i++) {
+            $ranjang = Ranjang::create([
+                'kamar_id' => $kamarId,
+                'nomor_ranjang' => $i,
+                'status' => 'tersedia',
+            ]);
+
+            Kasur::create([
+                'ranjang_id' => $ranjang->id,
+                'posisi' => 'atas',
+                'status' => 'tersedia',
+            ]);
+
+            Kasur::create([
+                'ranjang_id' => $ranjang->id,
+                'posisi' => 'bawah',
+                'status' => 'tersedia',
+            ]);
+        }
+    }
+
+    private function kamarKasurCount(int $kamarId, ?string $status = null): int
+    {
+        $query = Kasur::whereHas('ranjang', fn ($q) => $q->where('kamar_id', $kamarId));
+
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        return $query->count();
     }
 }

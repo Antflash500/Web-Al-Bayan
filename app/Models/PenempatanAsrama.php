@@ -15,7 +15,7 @@ class PenempatanAsrama extends Model
     protected $fillable = [
         'user_id',
         'kamar_id',
-        'ranjang_id',
+        'kasur_id',
         'tanggal_masuk',
         'tanggal_keluar',
         'status',
@@ -37,8 +37,8 @@ class PenempatanAsrama extends Model
         return $this->belongsTo(Kamar::class, 'kamar_id');
     }
 
-    public function ranjang(): BelongsTo
+    public function kasur(): BelongsTo
     {
-        return $this->belongsTo(Ranjang::class, 'ranjang_id');
+        return $this->belongsTo(Kasur::class, 'kasur_id');
     }
 }

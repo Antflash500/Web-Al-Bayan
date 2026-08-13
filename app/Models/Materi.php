@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -22,14 +23,55 @@ class Materi extends Model
         'urutan',
         'estimasi_menit',
         'status',
+        'gambar_path',
+        'gambar_name',
+        'gambar_size',
+        'pdf_path',
+        'pdf_name',
+        'pdf_size',
+        'video_path',
+        'video_name',
+        'video_size',
     ];
+
+    protected $appends = ['gambar_url', 'pdf_url', 'video_url'];
 
     protected function casts(): array
     {
         return [
             'urutan' => 'integer',
             'estimasi_menit' => 'integer',
+            'gambar_size' => 'integer',
+            'pdf_size' => 'integer',
+            'video_size' => 'integer',
         ];
+    }
+
+    protected function gambarUrl(): Attribute
+    {
+        return Attribute::get(
+            fn (): ?string => $this->gambar_path
+                ? url('/media/materi/'.basename($this->gambar_path))
+                : null
+        );
+    }
+
+    protected function pdfUrl(): Attribute
+    {
+        return Attribute::get(
+            fn (): ?string => $this->pdf_path
+                ? url('/media/materi/'.basename($this->pdf_path))
+                : null
+        );
+    }
+
+    protected function videoUrl(): Attribute
+    {
+        return Attribute::get(
+            fn (): ?string => $this->video_path
+                ? url('/media/materi/'.basename($this->video_path))
+                : null
+        );
     }
 
     public function program(): BelongsTo
@@ -50,6 +92,11 @@ class Materi extends Model
     public function audios(): HasMany
     {
         return $this->hasMany(Audio::class, 'materi_id');
+    }
+
+    public function kontens(): HasMany
+    {
+        return $this->hasMany(MateriKonten::class, 'materi_id')->orderBy('urutan');
     }
 
     public function quizes(): HasMany

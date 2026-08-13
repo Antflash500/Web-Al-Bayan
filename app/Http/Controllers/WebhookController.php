@@ -13,12 +13,26 @@ class WebhookController extends Controller
 
     public function handlePayment(Request $request)
     {
+        $secret = (string) config('services.payment_webhook_secret');
+
+        // Tolak jika secret tidak dikonfigurasi atau masih memakai nilai default.
+        if ($secret === '' || $secret === 'albayan-webhook-key') {
+            Log::channel('security')->critical('Webhook pembayaran tidak dikonfigurasi dengan benar');
+
+            return response()->json(['status' => 'error', 'message' => 'Server tidak dikonfigurasi'], 503);
+        }
+
         $signature = $request->header('X-Signature') ?? '';
-        $expectedSignature = hash_hmac(
-            'sha256',
-            $request->getContent(),
-            config('services.payment_webhook_secret', 'albayan-webhook-key')
-        );
+
+        if ($signature === '') {
+            Log::channel('security')->warning('Webhook diterima tanpa signature', [
+                'ip' => $request->ip(),
+            ]);
+
+            return response()->json(['status' => 'error', 'message' => 'Missing signature'], 403);
+        }
+
+        $expectedSignature = hash_hmac('sha256', $request->getContent(), $secret);
 
         if (! hash_equals($expectedSignature, $signature)) {
             Log::warning('Webhook signature mismatch', [

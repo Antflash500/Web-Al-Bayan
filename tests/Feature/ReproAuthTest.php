@@ -20,11 +20,13 @@ class ReproAuthTest extends TestCase
         $registerPage = $this->get('/register');
         fwrite(STDERR, '[GET /register] status='.$registerPage->status().PHP_EOL);
 
-        // 2. Submit register WITHOUT email/password credentials
+        // 2. Submit register WITHOUT password (username/password dibuat admin saat approve)
         $nik = '317205'.mt_rand(1000000000, 9999999999);
+        $email = 'budi.flow'.mt_rand(1000, 9999).'@test.com';
         $register = $this->post('/register', [
             'full_name' => 'Budi Flow Test',
             'nik' => $nik,
+            'email' => $email,
             'address' => 'Jl. Contoh No. 10, Jember',
             'birth_date' => '2001-06-14',
             'gender' => 'male',
@@ -39,9 +41,9 @@ class ReproAuthTest extends TestCase
         $this->assertNotNull($user, 'user harus tersimpan');
         fwrite(STDERR, '[DB] user id='.$user->id.' name='.$user->name.' username='.var_export($user->username, true).' status='.$user->status.PHP_EOL);
 
-        // Pending accounts have NO credentials yet
+        // Pending accounts have NO credentials yet (email disimpan, tetapi belum bisa login)
         $this->assertNull($user->username);
-        $this->assertNull($user->email);
+        $this->assertEquals($email, $user->email);
         $this->assertNull($user->password);
         $this->assertEquals(User::STATUS_PENDING, $user->status);
 
@@ -58,6 +60,7 @@ class ReproAuthTest extends TestCase
         $duplicate = $this->post('/register', [
             'full_name' => 'Dup Test',
             'nik' => $nik,
+            'email' => 'dup.flow@test.com',
             'address' => 'Jl. Lain No. 1',
             'birth_date' => '2002-01-01',
             'gender' => 'female',
@@ -69,6 +72,7 @@ class ReproAuthTest extends TestCase
         $badNik = $this->post('/register', [
             'full_name' => 'Bad Nik Test',
             'nik' => '1234567890',
+            'email' => 'badnik@test.com',
             'address' => 'Jl. Test',
             'birth_date' => '2000-01-01',
             'gender' => 'male',

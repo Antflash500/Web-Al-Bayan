@@ -632,11 +632,11 @@ Jember
 
 Nomor Telepon.
 
-+62 823 3262 0365
+082332620365
 
 WhatsApp.
 
-0823-3262-0365
+082332620365
 
 Google Maps.
 

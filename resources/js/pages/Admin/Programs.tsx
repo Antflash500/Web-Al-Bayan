@@ -261,6 +261,13 @@ export default function Programs({
                         <div className="mt-4 flex gap-2">
                             <button
                                 type="button"
+                                onClick={() => router.get(`/admin/programs/${p.id}/materi`)}
+                                className="inline-flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border text-xs font-medium transition hover:bg-surface"
+                            >
+                                <BookOpen className="size-3.5" /> Materi
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => openEdit(p)}
                                 className="inline-flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border text-xs font-medium transition hover:bg-surface"
                             >

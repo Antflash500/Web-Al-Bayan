@@ -17,11 +17,12 @@ interface SidebarProps {
 }
 
 export function StudentSidebar({ className, onItemClick }: SidebarProps) {
-    const { url, access } = usePage<{
+    const { url } = usePage();
+    const { access } = usePage<{
         access?: {
             asrama?: boolean;
         };
-    }>();
+    }>().props;
 
     const hasAsrama = access?.asrama ?? false;
 

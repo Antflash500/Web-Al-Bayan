@@ -6,10 +6,10 @@ export const SITE = {
     logo: '/images/logo.png',
     logoAuth: '/images/logo2.png',
     heroVideo: '/images/background1.mp4',
-    phone: '+62 823 3262 0365',
-    whatsapp: '0823-3262-0365',
+    phone: '082332620365',
+    whatsapp: '082332620365',
     whatsappUrl: 'https://wa.me/6282332620365',
-    email: 'info@albayaneducation.com',
+    email: 'albayaneducation@gmail.com',
     address: {
         street: 'Perumahan Pemali, Blok D17',
         city: 'Jember',
@@ -193,7 +193,7 @@ export const FAQS = [
     },
     {
         question: 'Bagaimana cara menghubungi kami?',
-        answer: 'Anda dapat menghubungi kami melalui WhatsApp di 0823-3262-0365 atau email yang tertera pada bagian kontak.',
+        answer: 'Anda dapat menghubungi kami melalui WhatsApp di 082332620365 atau email albayaneducation@gmail.com.',
     },
 ] as const;
 

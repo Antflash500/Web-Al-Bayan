@@ -6,6 +6,7 @@ import {
     CheckCircle2,
     Clock,
     CreditCard,
+    Download,
     Sparkles,
 } from 'lucide-react';
 import StudentPortalLayout from '@/layouts/StudentPortalLayout';
@@ -32,6 +33,20 @@ interface DashboardProps {
             name: string;
             role: string;
             avatar?: string | null;
+            username?: string | null;
+            nik?: string | null;
+            birth_date?: string | null;
+            gender?: string | null;
+            phone?: string | null;
+            address?: string | null;
+            father_name?: string | null;
+            father_address?: string | null;
+            father_occupation?: string | null;
+            father_phone?: string | null;
+            mother_name?: string | null;
+            mother_address?: string | null;
+            mother_occupation?: string | null;
+            mother_phone?: string | null;
         };
     };
     access?: {
@@ -45,8 +60,10 @@ interface DashboardProps {
         };
         asrama: {
             is_assigned: boolean;
+            rumah: string | null;
             kamar: string | null;
             ranjang: string | null;
+            posisi: 'atas' | 'bawah' | null;
         };
     };
     programs: ProgramItem[];
@@ -63,17 +80,27 @@ export default function Dashboard({ auth, summary, programs, aktivitas, access }
                 {/* Welcome Header Banner */}
                 <div className="relative overflow-hidden rounded-3xl border border-primary/10 bg-gradient-to-br from-primary to-primary/95 p-6 sm:p-8 text-white shadow-soft">
                     <div className="absolute -right-8 -top-8 size-48 rounded-full bg-white/5 blur-2xl" />
-                    <div className="relative z-10 space-y-2">
-                        <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1 text-xs font-medium text-white/90 backdrop-blur-md">
-                            <Sparkles className="size-3.5 text-amber-300" />
-                            Portal Digital Al Bayan
+                    <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1 text-xs font-medium text-white/90 backdrop-blur-md mb-2">
+                                <Sparkles className="size-3.5 text-amber-300" />
+                                Portal Digital Al Bayan
+                            </div>
+                            <h2 className="font-display text-2xl font-bold sm:text-3xl">
+                                Selamat datang, {userName}
+                            </h2>
+                            <p className="text-sm leading-relaxed text-white/80 sm:text-base max-w-xl">
+                                Kelola program, pembayaran, dan informasi asrama Anda dalam satu portal terpadu.
+                            </p>
                         </div>
-                        <h2 className="font-display text-2xl font-bold sm:text-3xl">
-                            Selamat datang, {userName}
-                        </h2>
-                        <p className="max-w-xl text-sm leading-relaxed text-white/80 sm:text-base">
-                            Kelola program, pembayaran, dan informasi asrama Anda dalam satu portal terpadu.
-                        </p>
+                        <div className="shrink-0">
+                            <a
+                                href="/siswa/biodata/unduh"
+                                className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-xs font-bold text-white backdrop-blur-md transition hover:bg-white/20"
+                            >
+                                <Download className="size-3.5" /> Unduh Profil
+                            </a>
+                        </div>
                     </div>
                 </div>
 
@@ -149,10 +176,11 @@ export default function Dashboard({ auth, summary, programs, aktivitas, access }
                                     {summary.asrama.is_assigned ? (
                                         <>
                                             <div className="font-display text-xl font-bold text-foreground">
-                                                Kamar {summary.asrama.kamar}
+                                                {summary.asrama.rumah} · Kamar {summary.asrama.kamar}
                                             </div>
                                             <p className="mt-1 text-xs font-medium text-muted">
-                                                Ranjang {summary.asrama.ranjang}
+                                                Ranjang {summary.asrama.ranjang} · Kasur{' '}
+                                                <span className="capitalize">{summary.asrama.posisi}</span>
                                             </p>
                                         </>
                                     ) : (

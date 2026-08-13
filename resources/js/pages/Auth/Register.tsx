@@ -29,6 +29,7 @@ export default function Register() {
         address: '',
         birth_date: '',
         gender: '',
+        website: '',
     });
 
     const nickDigitsOnly = (value: string) => value.replace(/\D/g, '').slice(0, 16);
@@ -90,6 +91,17 @@ export default function Register() {
             </div>
 
             <form onSubmit={submit} noValidate>
+                <div className="hidden" aria-hidden="true">
+                    <label htmlFor="website">Jangan diisi</label>
+                    <input
+                        id="website"
+                        type="text"
+                        tabIndex={-1}
+                        autoComplete="off"
+                        value={data.website}
+                        onChange={(e) => setData('website', e.target.value)}
+                    />
+                </div>
                 <AnimatePresence mode="wait">
                     {step === 0 && (
                         <motion.div

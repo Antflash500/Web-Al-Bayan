@@ -1,7 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowLeft, ArrowRight, Download, FileText, Clock } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Download, FileText, Clock, Link2 } from 'lucide-react';
 import StudentPortalLayout from '@/layouts/StudentPortalLayout';
-import type { Materi } from '@/types/models';
+import type { Materi, MateriKonten } from '@/types/models';
 import { cn } from '@/lib/utils';
 
 function LessonSidebar({
@@ -63,6 +63,171 @@ function LessonContent({
             programSlug={programSlug}
             label={label}
         />
+    );
+}
+
+function formatBytes(bytes: number | null | undefined): string {
+    if (!bytes) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let n = bytes;
+    while (n >= 1024 && i < units.length - 1) {
+        n /= 1024;
+        i++;
+    }
+    return `${n.toFixed(i === 0 || n >= 10 ? 0 : 1)} ${units[i]}`;
+}
+
+function youtubeEmbed(url: string): string | null {
+    const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{6,})/);
+    return m ? `https://www.youtube.com/embed/${m[1]}` : null;
+}
+
+function BabAttachments({ materi }: { materi: Materi }) {
+    const hasAny = materi.gambar_url || materi.video_url || materi.pdf_url;
+    if (!hasAny) return null;
+
+    return (
+        <div className="mt-8 space-y-6">
+            <h2 className="font-display text-lg text-foreground">Lampiran Materi</h2>
+
+            {materi.video_url && (
+                <video
+                    controls
+                    preload="metadata"
+                    className="aspect-video w-full rounded-[var(--radius-image)] border border-border bg-black"
+                    src={materi.video_url}
+                >
+                    Browser Anda tidak mendukung pemutaran video.
+                </video>
+            )}
+
+            {materi.gambar_url && (
+                <figure>
+                    <img
+                        src={materi.gambar_url}
+                        alt={materi.gambar_name ?? 'Gambar materi'}
+                        className="w-full rounded-[var(--radius-image)] border border-border"
+                        loading="lazy"
+                    />
+                </figure>
+            )}
+
+            {materi.pdf_url && (
+                <a
+                    href={materi.pdf_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-between gap-4 rounded-[var(--radius-card)] border border-border p-4 transition hover:bg-surface"
+                >
+                    <div className="flex min-w-0 items-center gap-3">
+                        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-secondary/10 text-secondary">
+                            <FileText className="size-5" />
+                        </span>
+                        <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">
+                                {materi.pdf_name ?? 'Materi PDF'}
+                            </p>
+                            <p className="text-xs text-muted">
+                                {formatBytes(materi.pdf_size)} · Buka di tab baru
+                            </p>
+                        </div>
+                    </div>
+                    <span className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-button)] border border-border px-4 py-2 text-sm font-medium transition hover:bg-surface">
+                        <Download className="size-4" /> Baca
+                    </span>
+                </a>
+            )}
+        </div>
+    );
+}
+
+function KontenBlocks({ kontens }: { kontens: MateriKonten[] }) {
+    if (!kontens.length) return null;
+
+    return (
+        <div className="mt-8 space-y-6">
+            {kontens.map((k) => (
+                <section key={k.id} className="space-y-2">
+                    {k.judul && (
+                        <h2 className="font-display text-lg text-foreground">{k.judul}</h2>
+                    )}
+
+                    {k.tipe === 'teks' && (
+                        <p className="whitespace-pre-wrap leading-relaxed text-foreground">{k.konten}</p>
+                    )}
+
+                    {k.tipe === 'gambar' && k.media_url && (
+                        <figure>
+                            <img
+                                src={k.media_url}
+                                alt={k.judul ?? 'Gambar materi'}
+                                className="w-full rounded-[var(--radius-image)] border border-border"
+                                loading="lazy"
+                            />
+                        </figure>
+                    )}
+
+                    {k.tipe === 'video' && k.media_url && (
+                        <video
+                            controls
+                            preload="metadata"
+                            className="aspect-video w-full rounded-[var(--radius-image)] border border-border bg-black"
+                            src={k.media_url}
+                        >
+                            Browser Anda tidak mendukung pemutaran video.
+                        </video>
+                    )}
+
+                    {k.tipe === 'video_link' && k.url && (
+                        youtubeEmbed(k.url) ? (
+                            <iframe
+                                src={youtubeEmbed(k.url)!}
+                                title={k.judul ?? 'Video'}
+                                className="aspect-video w-full rounded-[var(--radius-image)] border border-border"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                            />
+                        ) : (
+                            <a
+                                href={k.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 rounded-[var(--radius-button)] border border-border px-4 py-2.5 text-sm font-medium text-foreground transition hover:bg-surface"
+                            >
+                                <Link2 className="size-4" /> {k.judul ?? 'Buka video'}
+                            </a>
+                        )
+                    )}
+
+                    {k.tipe === 'pdf' && k.media_url && (
+                        <a
+                            href={k.media_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center justify-between gap-4 rounded-[var(--radius-card)] border border-border p-4 transition hover:bg-surface"
+                        >
+                            <div className="flex min-w-0 items-center gap-3">
+                                <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-secondary/10 text-secondary">
+                                    <FileText className="size-5" />
+                                </span>
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-foreground">
+                                        {k.file_name ?? 'Materi PDF'}
+                                    </p>
+                                    <p className="text-xs text-muted">
+                                        {formatBytes(k.file_size)} · Buka di tab baru
+                                    </p>
+                                </div>
+                            </div>
+                            <span className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-button)] border border-border px-4 py-2 text-sm font-medium transition hover:bg-surface">
+                                <Download className="size-4" /> Baca
+                            </span>
+                        </a>
+                    )}
+                </section>
+            ))}
+        </div>
     );
 }
 
@@ -140,6 +305,8 @@ export default function MateriShow({
                             </h1>
                             <p className="mt-3 leading-relaxed text-muted">{materi.deskripsi}</p>
 
+                            <BabAttachments materi={materi} />
+
                             {videos.length > 0 && (
                                 <div className="mt-6 overflow-hidden rounded-[var(--radius-image)] border border-border bg-surface">
                                     <video
@@ -202,6 +369,8 @@ export default function MateriShow({
                                     ))}
                                 </div>
                             )}
+
+                            <KontenBlocks kontens={materi.kontens ?? []} />
                         </article>
 
                         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

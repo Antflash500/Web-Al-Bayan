@@ -13,6 +13,7 @@ export default function Login() {
         username: '',
         password: '',
         remember: true,
+        website: '',
     });
 
     const submit = (e: React.FormEvent) => {
@@ -23,6 +24,17 @@ export default function Login() {
     return (
         <AuthLayout title="Login Admin">
             <form onSubmit={submit} className="space-y-5" noValidate>
+                <div className="hidden" aria-hidden="true">
+                    <label htmlFor="website">Jangan diisi</label>
+                    <input
+                        id="website"
+                        type="text"
+                        tabIndex={-1}
+                        autoComplete="off"
+                        value={data.website}
+                        onChange={(e) => setData('website', e.target.value)}
+                    />
+                </div>
                 <div>
                     <Label htmlFor="username">Username atau Email</Label>
                     <div className="relative">

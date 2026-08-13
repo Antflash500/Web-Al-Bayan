@@ -33,6 +33,8 @@ class HandleInertiaRequests extends Middleware
                 'message' => $request->session()->get('message'),
                 'error' => $request->session()->get('error'),
                 'status' => $request->session()->get('status'),
+                'port_scan' => $request->session()->get('port_scan'),
+                'self_test' => $request->session()->get('self_test'),
             ],
             'profile' => $profile,
             'access' => [

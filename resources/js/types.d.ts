@@ -10,8 +10,11 @@ declare module '@inertiajs/react' {
             } | null;
         } | null;
         profile?: Record<string, unknown> | null;
+        access?: {
+            asrama?: boolean;
+        } | null;
         errors?: Record<string, string>;
-        flash?: Record<string, string>;
+        flash?: Record<string, unknown>;
     }
 }
 

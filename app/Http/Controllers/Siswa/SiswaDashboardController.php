@@ -7,12 +7,15 @@ use App\Models\LogAktivitas;
 use App\Models\PenempatanAsrama;
 use App\Models\SiswaProgram;
 use App\Models\Transaksi;
+use App\Services\BiodataService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SiswaDashboardController extends Controller
 {
+    public function __construct(private readonly BiodataService $biodataService) {}
+
     public function index(Request $request): Response
     {
         $user = $request->user();
@@ -48,19 +51,23 @@ class SiswaDashboardController extends Controller
         ];
 
         // Asrama status
-        $penempatan = PenempatanAsrama::with(['kamar', 'ranjang'])
+        $penempatan = PenempatanAsrama::with(['kasur.ranjang.kamar.rumah'])
             ->where('user_id', $user->id)
             ->where('status', 'aktif')
             ->first();
 
         $asramaSummary = $penempatan ? [
             'is_assigned' => true,
-            'kamar' => $penempatan->kamar?->nomor_kamar ?? '-',
-            'ranjang' => sprintf('%02d', $penempatan->ranjang?->nomor_ranjang ?? 0),
+            'rumah' => $penempatan->kasur?->ranjang?->kamar?->rumah?->nama ?? '-',
+            'kamar' => $penempatan->kasur?->ranjang?->kamar?->nomor_kamar ?? '-',
+            'ranjang' => sprintf('%02d', $penempatan->kasur?->ranjang?->nomor_ranjang ?? 0),
+            'posisi' => $penempatan->kasur?->posisi ?? null,
         ] : [
             'is_assigned' => false,
+            'rumah' => null,
             'kamar' => null,
             'ranjang' => null,
+            'posisi' => null,
         ];
 
         // Activity log
@@ -76,6 +83,8 @@ class SiswaDashboardController extends Controller
                 ];
             });
 
+        $profile = $user->profile;
+
         return Inertia::render('Siswa/Dashboard', [
             'auth' => [
                 'user' => [
@@ -84,6 +93,20 @@ class SiswaDashboardController extends Controller
                     'name' => $user->name ?? $user->profile?->full_name ?? 'Siswa',
                     'role' => $user->role,
                     'avatar' => $user->profile?->avatar,
+                    'username' => $user->username,
+                    'nik' => $profile?->nik,
+                    'birth_date' => $profile?->birth_date?->format('d F Y'),
+                    'gender' => $profile?->gender,
+                    'phone' => $profile?->phone,
+                    'address' => $profile?->address,
+                    'father_name' => $profile?->father_name,
+                    'father_address' => $profile?->father_address,
+                    'father_occupation' => $profile?->father_occupation,
+                    'father_phone' => $profile?->father_phone,
+                    'mother_name' => $profile?->mother_name,
+                    'mother_address' => $profile?->mother_address,
+                    'mother_occupation' => $profile?->mother_occupation,
+                    'mother_phone' => $profile?->mother_phone,
                 ],
             ],
             'summary' => [
@@ -93,6 +116,16 @@ class SiswaDashboardController extends Controller
             ],
             'programs' => $programsList,
             'aktivitas' => $aktivitas,
+        ]);
+    }
+
+    public function unduhBiodata(Request $request)
+    {
+        $result = $this->biodataService->generate($request->user());
+
+        return response($result['bytes'], 200, [
+            'Content-Type' => 'image/png',
+            'Content-Disposition' => 'attachment; filename="'.$result['filename'].'"',
         ]);
     }
 }

@@ -54,6 +54,21 @@ class MediaController extends Controller
         ]);
     }
 
+    public function materiFile(string $path): Response
+    {
+        $disk = Storage::disk('public');
+        $relative = 'materi/'.$path;
+
+        if (! $disk->exists($relative)) {
+            return new Response('Not Found', 404);
+        }
+
+        return new Response((string) $disk->get($relative), 200, [
+            'Content-Type' => $disk->mimeType($relative) ?: 'application/octet-stream',
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
+    }
+
     private function fromRedis(string $key): ?string
     {
         try {

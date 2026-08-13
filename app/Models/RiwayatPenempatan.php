@@ -16,6 +16,8 @@ class RiwayatPenempatan extends Model
         'user_id',
         'ranjang_lama_id',
         'ranjang_baru_id',
+        'posisi_lama',
+        'posisi_baru',
         'dipindahkan_oleh_user_id',
         'alasan',
     ];

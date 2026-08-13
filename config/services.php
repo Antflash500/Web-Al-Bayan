@@ -39,4 +39,10 @@ return [
         'python' => env('KWITANSI_PYTHON'),
     ],
 
+    'python' => [
+        'binary' => env('PYTHON_BINARY'),
+    ],
+
+    'payment_webhook_secret' => env('PAYMENT_WEBHOOK_SECRET'),
+
 ];

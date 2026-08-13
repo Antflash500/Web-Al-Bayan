@@ -3,9 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Kamar;
+use App\Models\Kasur;
 use App\Models\ProgramKursus;
 use App\Models\Ranjang;
+use App\Models\Rumah;
 use App\Models\User;
+use App\Services\AsramaService;
 use App\Services\PembayaranService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
@@ -38,20 +41,29 @@ class AsramaAndPembayaranTest extends TestCase
             'requires_dorm' => true,
         ]);
 
-        // 3. Create 2 rooms and 12 beds
+        // 3. Create 1 house, 2 rooms and 24 kasur (12 ranjang tingkat)
+        $rumah = Rumah::create([
+            'nama' => 'Rumah Test Auto',
+            'status' => 'aktif',
+        ]);
+
         for ($i = 1; $i <= 2; $i++) {
             $kamar = Kamar::create([
-                'nomor_kamar' => sprintf('%02d', $i),
+                'rumah_id' => $rumah->id,
+                'nomor_kamar' => 'AUTO-'.sprintf('%02d', $i),
                 'kapasitas' => 6,
                 'status' => 'tersedia',
             ]);
 
             for ($r = 1; $r <= 6; $r++) {
-                Ranjang::create([
+                $ranjang = Ranjang::create([
                     'kamar_id' => $kamar->id,
                     'nomor_ranjang' => $r,
                     'status' => 'tersedia',
                 ]);
+
+                Kasur::create(['ranjang_id' => $ranjang->id, 'posisi' => 'atas', 'status' => 'tersedia']);
+                Kasur::create(['ranjang_id' => $ranjang->id, 'posisi' => 'bawah', 'status' => 'tersedia']);
             }
         }
 
@@ -77,14 +89,91 @@ class AsramaAndPembayaranTest extends TestCase
             'status' => 'aktif',
         ]);
 
-        // Student should have a bed placement
+        // Student should have a kasur placement
         $this->assertDatabaseHas('penempatan_asrama', [
             'user_id' => $student->id,
             'status' => 'aktif',
         ]);
 
-        // One bed should be marked occupied
-        $occupiedBedsCount = Ranjang::where('status', 'terisi')->count();
-        $this->assertEquals(1, $occupiedBedsCount);
+        // Satu kasur pada rumah baru ini harus terisi (asisasi tanpa
+        // terganggu data kasur lain yang mungkin sudah ada di database).
+        $this->assertEquals(1, Kasur::where('status', 'terisi')
+            ->whereHas('ranjang.kamar', fn ($q) => $q->where('rumah_id', $rumah->id))
+            ->count()
+        );
+
+        // Ranjang pada rumah baru seharusnya batas (sebagian/terisi)
+        $this->assertGreaterThanOrEqual(1, Ranjang::whereHas('kamar', fn ($q) => $q->where('rumah_id', $rumah->id))
+            ->whereIn('status', ['sebagian', 'terisi'])
+            ->count()
+        );
+
+        // Student can open the asrama page (renders without error)
+        $this->actingAs($student);
+        $this->get('/siswa/asrama')->assertOk();
+    }
+
+    public function test_admin_asrama_page_renders(): void
+    {
+        $admin = User::create([
+            'username' => 'asramaadmin',
+            'name' => 'Asrama Admin',
+            'email' => 'asramaadmin@test.com',
+            'password' => bcrypt('password'),
+            'role' => User::ROLE_ADMIN,
+            'status' => User::STATUS_AKTIF,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($admin);
+        $this->get('/admin/asrama')->assertOk();
+    }
+
+    public function test_manual_assign_and_vacate_kasur_by_position(): void
+    {
+        $student = User::create([
+            'username' => 'manualstudent',
+            'name' => 'Manual Student',
+            'email' => 'manual@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'student',
+            'status' => 'aktif',
+            'email_verified_at' => now(),
+        ]);
+
+        $rumah = Rumah::create(['nama' => 'Rumah Test Manual', 'status' => 'aktif']);
+        $kamar = Kamar::create([
+            'rumah_id' => $rumah->id,
+            'nomor_kamar' => 'MANUAL-01',
+            'kapasitas' => 1,
+            'status' => 'tersedia',
+        ]);
+        $ranjang = Ranjang::create(['kamar_id' => $kamar->id, 'nomor_ranjang' => 1, 'status' => 'tersedia']);
+        $kasurAtas = Kasur::create(['ranjang_id' => $ranjang->id, 'posisi' => 'atas', 'status' => 'tersedia']);
+        $kasurBawah = Kasur::create(['ranjang_id' => $ranjang->id, 'posisi' => 'bawah', 'status' => 'tersedia']);
+
+        /** @var AsramaService $service */
+        $service = app(AsramaService::class);
+
+        $penempatan = $service->assignManualBed($student, $kasurAtas->id, $student);
+
+        $this->assertDatabaseHas('penempatan_asrama', [
+            'user_id' => $student->id,
+            'kasur_id' => $kasurAtas->id,
+            'status' => 'aktif',
+        ]);
+        $this->assertEquals('terisi', $kasurAtas->fresh()->status);
+        $this->assertEquals('sebagian', $ranjang->fresh()->status);
+
+        // Vacate
+        $service->vacateBed($kasurAtas->id);
+
+        $this->assertEquals('tersedia', $kasurAtas->fresh()->status);
+        $this->assertEquals('tersedia', $ranjang->fresh()->status);
+        $this->assertDatabaseMissing('penempatan_asrama', [
+            'user_id' => $student->id,
+            'kasur_id' => $kasurAtas->id,
+            'status' => 'aktif',
+        ]);
     }
 }

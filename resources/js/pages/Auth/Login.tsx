@@ -14,6 +14,7 @@ export default function Login() {
         username: '',
         password: '',
         remember: false,
+        website: '',
     });
 
     const submit = (e: React.FormEvent) => {
@@ -30,6 +31,17 @@ export default function Login() {
                 </div>
             )}
             <form onSubmit={submit} className="space-y-5" noValidate>
+                <div className="hidden" aria-hidden="true">
+                    <label htmlFor="website">Jangan diisi</label>
+                    <input
+                        id="website"
+                        type="text"
+                        tabIndex={-1}
+                        autoComplete="off"
+                        value={data.website}
+                        onChange={(e) => setData('website', e.target.value)}
+                    />
+                </div>
                 <div>
                     <Label htmlFor="username">Username</Label>
                     <div className="relative">

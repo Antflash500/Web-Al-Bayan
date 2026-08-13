@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminAsramaController;
+use App\Http\Controllers\Admin\AdminMateriController;
 use App\Http\Controllers\Admin\AdminPembayaranController;
+use App\Http\Controllers\Admin\SecurityController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
@@ -34,25 +36,29 @@ Route::get('/media/bukti/{path}', [MediaController::class, 'buktiImage'])
     ->where('path', '.*')
     ->name('media.bukti-image');
 
+Route::get('/media/materi/{path}', [MediaController::class, 'materiFile'])
+    ->where('path', '.*')
+    ->name('media.materi-file');
+
 Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'create'])->name('login');
-    Route::post('/login', [LoginController::class, 'store'])->name('login.store');
+    Route::post('/login', [LoginController::class, 'store'])->middleware('throttle:auth-login')->name('login.store');
 
     Route::get('/register', [RegisterController::class, 'create'])->name('register');
-    Route::post('/register', [RegisterController::class, 'store'])->name('register.store');
+    Route::post('/register', [RegisterController::class, 'store'])->middleware('throttle:auth-register')->name('register.store');
     Route::get('/register/success', [RegisterController::class, 'success'])->name('register.success');
 
     Route::get('/forgot-password', [ForgotPasswordController::class, 'show'])->name('password.request');
-    Route::post('/forgot-password', [ForgotPasswordController::class, 'sendOtp'])->name('password.email');
+    Route::post('/forgot-password', [ForgotPasswordController::class, 'sendOtp'])->middleware('throttle:auth-otp')->name('password.email');
 
     Route::get('/verify-otp', [ForgotPasswordController::class, 'showVerify'])->name('verify-otp');
-    Route::post('/verify-otp', [ForgotPasswordController::class, 'verifyOtp'])->name('verify-otp.store');
+    Route::post('/verify-otp', [ForgotPasswordController::class, 'verifyOtp'])->middleware('throttle:auth-otp')->name('verify-otp.store');
 
     Route::get('/reset-password', [ForgotPasswordController::class, 'showReset'])->name('password.reset');
-    Route::post('/reset-password', [ForgotPasswordController::class, 'reset'])->name('password.update');
+    Route::post('/reset-password', [ForgotPasswordController::class, 'reset'])->middleware('throttle:auth-otp')->name('password.update');
 
     Route::get('/admin/login', [AdminLoginController::class, 'create'])->name('admin.login');
-    Route::post('/admin/login', [AdminLoginController::class, 'store'])->name('admin.login.store');
+    Route::post('/admin/login', [AdminLoginController::class, 'store'])->middleware('throttle:auth-login')->name('admin.login.store');
 });
 
 Route::middleware('auth')->group(function () {
@@ -76,6 +82,15 @@ Route::middleware('auth')->group(function () {
         Route::post('/programs', [AdminController::class, 'storeProgram'])->name('programs.store');
         Route::patch('/programs/{program}', [AdminController::class, 'updateProgram'])->name('programs.update');
         Route::delete('/programs/{program}', [AdminController::class, 'destroyProgram'])->name('programs.destroy');
+        Route::get('/programs/{program}/materi', [AdminMateriController::class, 'index'])->name('programs.materi');
+        Route::post('/programs/{program}/materi', [AdminMateriController::class, 'storeMateri'])->name('programs.materi.store');
+        Route::post('/programs/{program}/materi/{materi}/move/{direction}', [AdminMateriController::class, 'moveMateri'])->name('programs.materi.move');
+        Route::patch('/programs/{program}/materi/{materi}', [AdminMateriController::class, 'updateMateri'])->name('programs.materi.update');
+        Route::delete('/programs/{program}/materi/{materi}', [AdminMateriController::class, 'destroyMateri'])->name('programs.materi.destroy');
+        Route::post('/programs/{program}/materi/{materi}/konten', [AdminMateriController::class, 'storeKonten'])->name('programs.materi.konten.store');
+        Route::patch('/programs/{program}/materi/{materi}/konten/{konten}', [AdminMateriController::class, 'updateKonten'])->name('programs.materi.konten.update');
+        Route::delete('/programs/{program}/materi/{materi}/konten/{konten}', [AdminMateriController::class, 'destroyKonten'])->name('programs.materi.konten.destroy');
+        Route::post('/programs/{program}/materi/{materi}/konten/{konten}/move/{direction}', [AdminMateriController::class, 'moveKonten'])->name('programs.materi.konten.move');
         Route::get('/announcements', [AdminController::class, 'announcements'])->name('announcements');
         Route::post('/announcements', [AdminController::class, 'storeAnnouncement'])->name('announcements.store');
         Route::delete('/announcements/{pengumuman}', [AdminController::class, 'destroyAnnouncement'])->name('announcements.destroy');
@@ -87,16 +102,39 @@ Route::middleware('auth')->group(function () {
         Route::get('/asrama', [AdminAsramaController::class, 'index'])->name('asrama');
         Route::get('/asrama/riwayat', [AdminAsramaController::class, 'riwayat'])->name('asrama.riwayat');
         Route::get('/asrama/search-students', [AdminAsramaController::class, 'searchStudents'])->name('asrama.search-students');
+        Route::post('/asrama/rumah', [AdminAsramaController::class, 'storeRumah'])->name('asrama.rumah.store');
+        Route::patch('/asrama/rumah/{rumah}', [AdminAsramaController::class, 'updateRumah'])->name('asrama.rumah.update');
+        Route::delete('/asrama/rumah/{rumah}', [AdminAsramaController::class, 'destroyRumah'])->name('asrama.rumah.destroy');
         Route::post('/asrama/kamar', [AdminAsramaController::class, 'storeKamar'])->name('asrama.kamar.store');
         Route::patch('/asrama/kamar/{kamar}', [AdminAsramaController::class, 'updateKamar'])->name('asrama.kamar.update');
         Route::delete('/asrama/kamar/{kamar}', [AdminAsramaController::class, 'destroyKamar'])->name('asrama.kamar.destroy');
         Route::post('/asrama/assign', [AdminAsramaController::class, 'assign'])->name('asrama.assign');
-        Route::post('/asrama/vacate/{ranjangId}', [AdminAsramaController::class, 'vacate'])->name('asrama.vacate');
+        Route::post('/asrama/vacate/{kasur}', [AdminAsramaController::class, 'vacate'])->name('asrama.vacate');
+
+        Route::get('/security', [SecurityController::class, 'index'])->name('security');
+        Route::get('/security/export', [SecurityController::class, 'exportCsv'])->name('security.export');
+        Route::post('/security/monitor', [SecurityController::class, 'recordMonitoring'])
+            ->middleware('throttle:admin-security-check')
+            ->name('security.monitor');
+        Route::post('/security/scan-ports', [SecurityController::class, 'scanPorts'])
+            ->middleware('throttle:admin-port-scan')
+            ->name('security.scan-ports');
+        Route::post('/security/self-test', [SecurityController::class, 'selfTest'])
+            ->middleware('throttle:admin-security-check')
+            ->name('security.self-test');
+        Route::post('/security/session/terminate', [SecurityController::class, 'terminateSession'])
+            ->name('security.session.terminate');
+        Route::post('/security/sessions/terminate-others', [SecurityController::class, 'terminateOtherSessions'])
+            ->name('security.sessions.terminate-others');
+        Route::post('/security/ban', [SecurityController::class, 'banIp'])->name('security.ban');
+        Route::post('/security/unban', [SecurityController::class, 'unbanIp'])->name('security.unban');
     });
 
     Route::middleware('role:siswa')->group(function () {
         Route::get('/siswa', [SiswaDashboardController::class, 'index'])->name('siswa.dashboard');
         Route::get('/home', [SiswaDashboardController::class, 'index'])->name('portal.home');
+
+        Route::get('/siswa/biodata/unduh', [SiswaDashboardController::class, 'unduhBiodata'])->name('siswa.biodata.unduh');
 
         Route::get('/siswa/program', [SiswaProgramController::class, 'index'])->name('siswa.program');
         Route::get('/siswa/program/cari', [SiswaProgramController::class, 'cari'])->name('siswa.program.cari');
@@ -120,6 +158,7 @@ Route::middleware('auth')->group(function () {
 
         // Heartbeat endpoint for online/offline status
         Route::post('/siswa/heartbeat', [HeartbeatController::class, 'ping'])
+            ->middleware('throttle:heartbeat')
             ->name('siswa.heartbeat');
     });
 
@@ -128,4 +167,5 @@ Route::middleware('auth')->group(function () {
 
 // Public webhook endpoint (no auth required, signature-protected)
 Route::post('/webhook/payment', [WebhookController::class, 'handlePayment'])
+    ->middleware('throttle:webhook')
     ->name('webhook.payment');

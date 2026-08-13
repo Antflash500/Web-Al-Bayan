@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm } from '@inertiajs/react';
 import {
     Banknote,
+    Building2,
     Camera,
+    Check,
     CheckCircle2,
     Clock,
+    Copy,
     CreditCard,
     Download,
     LockKeyhole,
@@ -33,6 +36,7 @@ const REKENING = '0241556254';
 export default function Pembayaran({ transaksi }: { transaksi: TransaksiItem[] }) {
     const [paying, setPaying] = useState<TransaksiItem | null>(null);
     const [method, setMethod] = useState<'transfer' | 'qris'>('transfer');
+    const [copied, setCopied] = useState<boolean>(false);
 
     const { data, setData, post, processing, reset, errors } = useForm<{
         metode: 'transfer' | 'qris';
@@ -123,6 +127,12 @@ export default function Pembayaran({ transaksi }: { transaksi: TransaksiItem[] }
     const canPay = (item: TransaksiItem) => {
         const s = item.status.toLowerCase();
         return s === 'pending' && !item.has_bukti;
+    };
+
+    const copyRekening = () => {
+        navigator.clipboard.writeText(REKENING);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     return (
@@ -280,15 +290,34 @@ export default function Pembayaran({ transaksi }: { transaksi: TransaksiItem[] }
                         </div>
 
                         {method === 'transfer' ? (
-                            <div className="mt-5 rounded-2xl border border-border bg-surface/50 p-5">
-                                <p className="text-sm leading-relaxed text-foreground">
-                                    Silakan transfer ke rekening{' '}
-                                    <span className="font-mono font-bold text-primary">
-                                        {REKENING}
-                                    </span>
-                                    , dan jangan lupa <b>screenshot</b> ya, lalu{' '}
-                                    <b>upload di bawah</b>. Terima kasih...
-                                </p>
+                            <div className="rounded-2xl border border-border bg-surface/50 p-5">
+                                <div className="flex flex-col gap-3">
+                                    <div>
+                                        <span className="text-xs font-semibold text-muted">No Rek</span>
+                                        <div className="mt-1 flex items-center gap-2">
+                                            <span className="font-mono text-sm font-bold text-foreground">
+                                                {REKENING}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={copyRekening}
+                                                className="grid size-7 shrink-0 place-items-center rounded-md bg-surface text-muted transition hover:bg-border"
+                                            >
+                                                {copied ? (
+                                                    <Check className="size-3.5 text-emerald-500" />
+                                                ) : (
+                                                    <Copy className="size-3.5" />
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2.5">
+                                        <Building2 className="size-5 text-primary" />
+                                        <span className="text-sm font-semibold text-foreground">
+                                            Atas Nama Wira Yafi Baswara
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
                         ) : (
                             <div className="mt-5 rounded-2xl border border-border bg-surface/50 p-5">

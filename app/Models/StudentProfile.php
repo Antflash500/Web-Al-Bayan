@@ -25,6 +25,14 @@ class StudentProfile extends Model
         'avatar',
         'agreed_terms',
         'registration_status',
+        'father_name',
+        'father_address',
+        'father_occupation',
+        'father_phone',
+        'mother_name',
+        'mother_address',
+        'mother_occupation',
+        'mother_phone',
     ];
 
     protected function casts(): array

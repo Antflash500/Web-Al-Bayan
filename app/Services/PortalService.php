@@ -69,7 +69,7 @@ class PortalService
     public function materi(string $materiSlug): array
     {
         $materi = Materi::aktif()
-            ->with(['program', 'videos', 'pdfs', 'audios', 'quizes'])
+            ->with(['program', 'videos', 'pdfs', 'audios', 'quizes', 'kontens'])
             ->where('slug', $materiSlug)
             ->firstOrFail();
 

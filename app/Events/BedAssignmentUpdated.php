@@ -20,9 +20,13 @@ class BedAssignmentUpdated implements ShouldBroadcast
 
     public ?int $ranjangId;
 
+    public ?int $kasurId;
+
     public ?string $kamarNomor;
 
     public ?string $ranjangNomor;
+
+    public ?string $posisi;
 
     public string $status;
 
@@ -32,16 +36,20 @@ class BedAssignmentUpdated implements ShouldBroadcast
         int $userId,
         ?int $kamarId,
         ?int $ranjangId,
+        ?int $kasurId,
         ?string $kamarNomor,
         ?string $ranjangNomor,
+        ?string $posisi,
         string $status = 'assigned',
         string $action = 'assigned'
     ) {
         $this->userId = $userId;
         $this->kamarId = $kamarId;
         $this->ranjangId = $ranjangId;
+        $this->kasurId = $kasurId;
         $this->kamarNomor = $kamarNomor;
         $this->ranjangNomor = $ranjangNomor;
+        $this->posisi = $posisi;
         $this->status = $status;
         $this->action = $action;
     }
@@ -65,8 +73,10 @@ class BedAssignmentUpdated implements ShouldBroadcast
             'userId' => $this->userId,
             'kamarId' => $this->kamarId,
             'ranjangId' => $this->ranjangId,
+            'kasurId' => $this->kasurId,
             'kamarNomor' => $this->kamarNomor,
             'ranjangNomor' => $this->ranjangNomor,
+            'posisi' => $this->posisi,
             'status' => $this->status,
             'action' => $this->action,
         ];

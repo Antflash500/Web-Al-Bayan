@@ -32,6 +32,8 @@ class RegisterController extends Controller
             'address' => ['required', 'string', 'max:500'],
             'birth_date' => ['required', 'date', 'before:today'],
             'gender' => ['required', 'in:male,female'],
+            // Honeypot anti-bot: field tersembunyi yang harus tetap kosong.
+            'website' => ['prohibited'],
         ]);
 
         $this->authService->register($data);

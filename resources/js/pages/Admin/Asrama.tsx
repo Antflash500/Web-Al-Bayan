@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import {
+    Home,
     Info,
     Plus,
     Search,
@@ -20,11 +21,18 @@ interface StudentData {
     is_online: boolean;
 }
 
+interface KasurData {
+    id: number;
+    posisi: 'atas' | 'bawah';
+    status: 'tersedia' | 'terisi' | 'maintenance' | 'nonaktif';
+    student: StudentData | null;
+}
+
 interface RanjangData {
     id: number;
     nomor_ranjang: string;
-    status: 'tersedia' | 'terisi' | 'maintenance' | 'nonaktif';
-    student: StudentData | null;
+    status: string;
+    kasur: KasurData[];
 }
 
 interface KamarData {
@@ -35,31 +43,63 @@ interface KamarData {
     ranjang: RanjangData[];
 }
 
+interface RumahData {
+    id: number;
+    nama: string;
+    status: string;
+    keterangan: string;
+    kamar: KamarData[];
+}
+
 interface AsramaProps {
     stats: {
+        totalRumah: number;
         totalKamar: number;
         totalRanjang: number;
+        totalKasur: number;
         terisi: number;
         tersedia: number;
     };
-    rooms: KamarData[];
+    rumah: RumahData[];
 }
 
-export default function Asrama({ stats, rooms }: AsramaProps) {
-    const [selectedBed, setSelectedBed] = useState<RanjangData | null>(null);
+interface KamarForm {
+    rumah_id: string | number;
+    nomor_kamar: string;
+    kapasitas: number;
+    status: string;
+    keterangan: string;
+}
+
+interface RumahForm {
+    nama: string;
+    status: string;
+    keterangan: string;
+}
+
+export default function Asrama({ stats, rumah }: AsramaProps) {
+    const [selectedKasur, setSelectedKasur] = useState<KasurData | null>(null);
     const [selectedRoom, setSelectedRoom] = useState<KamarData | null>(null);
+    const [selectedRumah, setSelectedRumah] = useState<RumahData | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
+
     const [manageKamarOpen, setManageKamarOpen] = useState(false);
     const [editingKamar, setEditingKamar] = useState<KamarData | null>(null);
+    const [kamarFormState, setKamarFormState] = useState<KamarForm>({
+        rumah_id: rumah[0]?.id ?? '',
+        nomor_kamar: '',
+        kapasitas: 6,
+        status: 'tersedia',
+        keterangan: '',
+    });
 
-    const kamarForm = {
-        nomor_kamar: editingKamar?.nomor_kamar ?? '',
-        kapasitas: editingKamar?.ranjang?.length ?? 6,
-        status: editingKamar?.status ?? 'tersedia',
-        keterangan: editingKamar?.keterangan ?? '',
-    };
-
-    const [kamarFormState, setKamarFormState] = useState(kamarForm);
+    const [manageRumahOpen, setManageRumahOpen] = useState(false);
+    const [editingRumah, setEditingRumah] = useState<RumahData | null>(null);
+    const [rumahFormState, setRumahFormState] = useState<RumahForm>({
+        nama: '',
+        status: 'aktif',
+        keterangan: '',
+    });
 
     // Search and Autocomplete States
     const [searchQuery, setSearchQuery] = useState('');
@@ -67,9 +107,10 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
     const [selectedStudent, setSelectedStudent] = useState<{ id: number; name: string } | null>(null);
     const [searching, setSearching] = useState(false);
 
-    const handleBedClick = (room: KamarData, bed: RanjangData) => {
+    const handleKasurClick = (rumahItem: RumahData, room: KamarData, kasur: KasurData) => {
+        setSelectedRumah(rumahItem);
         setSelectedRoom(room);
-        setSelectedBed(bed);
+        setSelectedKasur(kasur);
         setSearchQuery('');
         setSearchResults([]);
         setSelectedStudent(null);
@@ -99,35 +140,37 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
     }, [searchQuery]);
 
     const handleAssign = () => {
-        if (!selectedStudent || !selectedBed) return;
+        if (!selectedStudent || !selectedKasur) return;
 
         router.post(
             '/admin/asrama/assign',
             {
                 user_id: selectedStudent.id,
-                ranjang_id: selectedBed.id,
+                kasur_id: selectedKasur.id,
             },
             {
                 onSuccess: () => {
                     setModalOpen(false);
-                    setSelectedBed(null);
+                    setSelectedKasur(null);
                     setSelectedRoom(null);
+                    setSelectedRumah(null);
                 },
             }
         );
     };
 
-    const handleVacate = (ranjangId: number) => {
-        if (!confirm('Apakah Anda yakin ingin mengosongkan ranjang ini?')) return;
+    const handleVacate = (kasurId: number) => {
+        if (!confirm('Apakah Anda yakin ingin mengosongkan kasur ini?')) return;
 
         router.post(
-            `/admin/asrama/vacate/${ranjangId}`,
+            `/admin/asrama/vacate/${kasurId}`,
             {},
             {
                 onSuccess: () => {
                     setModalOpen(false);
-                    setSelectedBed(null);
+                    setSelectedKasur(null);
                     setSelectedRoom(null);
+                    setSelectedRumah(null);
                 },
             }
         );
@@ -136,6 +179,7 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
     const handleCreateKamar = () => {
         setEditingKamar(null);
         setKamarFormState({
+            rumah_id: rumah[0]?.id ?? '',
             nomor_kamar: '',
             kapasitas: 6,
             status: 'tersedia',
@@ -144,9 +188,10 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
         setManageKamarOpen(true);
     };
 
-    const handleEditKamar = (kamar: KamarData) => {
+    const handleEditKamar = (rumahItem: RumahData, kamar: KamarData) => {
         setEditingKamar(kamar);
         setKamarFormState({
+            rumah_id: rumahItem.id,
             nomor_kamar: kamar.nomor_kamar,
             kapasitas: kamar.ranjang?.length ?? 6,
             status: kamar.status,
@@ -156,7 +201,7 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
     };
 
     const handleDeleteKamar = (kamarId: number) => {
-        if (!confirm('Hapus kamar ini? Semua ranjang harus kosong.')) return;
+        if (!confirm('Hapus kamar ini? Semua kasur harus kosong.')) return;
         router.delete(`/admin/asrama/kamar/${kamarId}`);
     };
 
@@ -164,6 +209,7 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
         e.preventDefault();
 
         const data = {
+            rumah_id: kamarFormState.rumah_id,
             nomor_kamar: kamarFormState.nomor_kamar,
             kapasitas: kamarFormState.kapasitas,
             status: kamarFormState.status,
@@ -186,6 +232,52 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
         }
     };
 
+    const handleCreateRumah = () => {
+        setEditingRumah(null);
+        setRumahFormState({ nama: '', status: 'aktif', keterangan: '' });
+        setManageRumahOpen(true);
+    };
+
+    const handleEditRumah = (rumahItem: RumahData) => {
+        setEditingRumah(rumahItem);
+        setRumahFormState({
+            nama: rumahItem.nama,
+            status: rumahItem.status,
+            keterangan: rumahItem.keterangan ?? '',
+        });
+        setManageRumahOpen(true);
+    };
+
+    const handleDeleteRumah = (rumahId: number) => {
+        if (!confirm('Hapus rumah ini? Rumah harus dalam keadaan kosong (tanpa kamar).')) return;
+        router.delete(`/admin/asrama/rumah/${rumahId}`);
+    };
+
+    const submitRumah = (e: React.FormEvent) => {
+        e.preventDefault();
+
+        const data = {
+            nama: rumahFormState.nama,
+            status: rumahFormState.status,
+            keterangan: rumahFormState.keterangan,
+        };
+
+        if (editingRumah) {
+            router.patch(`/admin/asrama/rumah/${editingRumah.id}`, data, {
+                onSuccess: () => {
+                    setManageRumahOpen(false);
+                    setEditingRumah(null);
+                },
+            });
+        } else {
+            router.post('/admin/asrama/rumah', data, {
+                onSuccess: () => {
+                    setManageRumahOpen(false);
+                },
+            });
+        }
+    };
+
     return (
         <AdminLayout>
             <Head title="Manajemen Asrama" />
@@ -197,7 +289,7 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                             Manajemen Asrama & Ranjang
                         </h1>
                         <p className="text-xs text-muted">
-                            Kelola kapasitas kamar, penempatan ranjang mahasiswa, dan status penempatan.
+                            Kelola rumah, kamar, ranjang tingkat, dan kasur (atas/bawah) beserta penempatan siswa.
                         </p>
                     </div>
                     <div className="flex items-center gap-3">
@@ -207,18 +299,42 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                         >
                             <Info className="size-4" /> Riwayat Penempatan
                         </Link>
-                            <button
-                                    type="button"
-                                    onClick={handleCreateKamar}
-                                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-soft transition hover:bg-primary/95"
-                                >
+                        <button
+                            type="button"
+                            onClick={handleCreateRumah}
+                            className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-xs font-bold text-foreground transition hover:bg-primary/5 hover:border-primary/20"
+                        >
+                            <Home className="size-4" /> Tambah Rumah
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleCreateKamar}
+                            disabled={rumah.length === 0}
+                            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-soft transition hover:bg-primary/95 disabled:cursor-not-allowed disabled:opacity-50"
+                            title={rumah.length === 0 ? 'Buat Rumah terlebih dahulu' : ''}
+                        >
                             <Plus className="size-4" /> Tambah Kamar
                         </button>
                     </div>
                 </div>
 
+                {rumah.length === 0 && (
+                    <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
+                        <Home className="size-4 shrink-0" />
+                        Belum ada rumah. Silakan buat rumah terlebih dahulu sebelum menambahkan kamar.
+                    </div>
+                )}
+
                 {/* Statistics Grid */}
-                <div className="grid gap-4 sm:grid-cols-4">
+                <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                    <div className="rounded-2xl border border-border bg-white p-5 shadow-soft">
+                        <span className="text-[11px] font-bold text-muted uppercase tracking-wider block">
+                            Rumah
+                        </span>
+                        <span className="font-display text-2xl font-bold text-foreground mt-2 block">
+                            {stats.totalRumah}
+                        </span>
+                    </div>
                     <div className="rounded-2xl border border-border bg-white p-5 shadow-soft">
                         <span className="text-[11px] font-bold text-muted uppercase tracking-wider block">
                             Total Kamar
@@ -233,6 +349,14 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                         </span>
                         <span className="font-display text-2xl font-bold text-foreground mt-2 block">
                             {stats.totalRanjang}
+                        </span>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-white p-5 shadow-soft">
+                        <span className="text-[11px] font-bold text-muted uppercase tracking-wider block">
+                            Total Kasur
+                        </span>
+                        <span className="font-display text-2xl font-bold text-foreground mt-2 block">
+                            {stats.totalKasur}
                         </span>
                     </div>
                     <div className="rounded-2xl border border-border bg-white p-5 shadow-soft">
@@ -253,40 +377,49 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                     </div>
                 </div>
 
-                {/* Rooms Grid Layout */}
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {rooms.map((room) => (
+                {/* Rumah Sections */}
+                <div className="space-y-6">
+                    {rumah.map((rumahItem) => (
                         <div
-                            key={room.id}
-                            className="rounded-2xl border border-border bg-white p-6 shadow-soft space-y-4"
+                            key={rumahItem.id}
+                            className="rounded-2xl border border-border bg-surface/40 p-5 shadow-soft space-y-5"
                         >
-                            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-                                <div>
-                                    <h3 className="font-display font-bold text-foreground text-base">
-                                        Kamar {room.nomor_kamar}
-                                    </h3>
-                                    <p className="text-[10px] text-muted">{room.keterangan}</p>
+                            <div className="flex items-center justify-between border-b border-border/60 pb-4">
+                                <div className="flex items-center gap-3">
+                                    <span className="grid size-9 place-items-center rounded-xl bg-primary text-white">
+                                        <Home className="size-4.5" />
+                                    </span>
+                                    <div>
+                                        <h2 className="font-display font-bold text-foreground text-base">
+                                            {rumahItem.nama}
+                                        </h2>
+                                        <p className="text-[10px] text-muted">
+                                            {rumahItem.keterangan ?? 'Tanpa keterangan'}
+                                        </p>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
-                                        room.status === 'penuh' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                                        rumahItem.status === 'nonaktif'
+                                            ? 'bg-rose-50 text-rose-600'
+                                            : 'bg-emerald-50 text-emerald-700'
                                     }`}>
-                                        {room.status === 'penuh' ? 'Penuh' : 'Tersedia'}
+                                        {rumahItem.status === 'nonaktif' ? 'Nonaktif' : 'Aktif'}
                                     </span>
                                     <div className="flex gap-1">
                                         <button
                                             type="button"
-                                            onClick={() => handleEditKamar(room)}
+                                            onClick={() => handleEditRumah(rumahItem)}
                                             className="grid size-7 place-items-center rounded-lg text-xs text-muted transition hover:bg-surface"
-                                            title="Edit Kamar"
+                                            title="Edit Rumah"
                                         >
                                             ✏️
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => handleDeleteKamar(room.id)}
+                                            onClick={() => handleDeleteRumah(rumahItem.id)}
                                             className="grid size-7 place-items-center rounded-lg text-xs text-danger transition hover:bg-rose-50"
-                                            title="Hapus Kamar"
+                                            title="Hapus Rumah"
                                         >
                                             <Trash2 className="size-3.5" />
                                         </button>
@@ -294,54 +427,171 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                                 </div>
                             </div>
 
-                            {/* 6 Beds Visualizer Grid */}
-                            <div className="grid grid-cols-2 gap-3">
-                                {room.ranjang.map((bed) => (
-                                    <button
-                                        type="button"
-                                        key={bed.id}
-                                        onClick={() => handleBedClick(room, bed)}
-                                        className={`flex items-center justify-between rounded-xl border p-3 text-left transition ${
-                                            bed.status === 'terisi'
-                                                ? 'border-primary/20 bg-primary/5 hover:bg-primary/10'
-                                                : 'border-border bg-white hover:border-emerald-200 hover:bg-emerald-50/30'
-                                        }`}
-                                    >
-                                        <div>
-                                            <span className="text-[10px] font-bold text-muted block uppercase">
-                                                Ranjang
-                                            </span>
-                                            <span className="font-display text-sm font-bold text-foreground">
-                                                {bed.nomor_ranjang}
-                                            </span>
-                                        </div>
-
-                                        <div className="flex items-center gap-1.5">
-                                            {bed.status === 'terisi' ? (
-                                                <div className="relative">
-                                                    <span className="grid size-7 place-items-center rounded-lg bg-primary text-white text-[10px] font-bold uppercase">
-                                                        {bed.student?.name.charAt(0).toUpperCase()}
-                                                    </span>
-                                                    {bed.student?.is_online && (
-                                                        <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
-                                                    )}
+                            {rumahItem.kamar.length === 0 ? (
+                                <p className="text-xs text-muted italic">
+                                    Belum ada kamar di rumah ini.
+                                </p>
+                            ) : (
+                                <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                                    {rumahItem.kamar.map((room) => (
+                                        <div
+                                            key={room.id}
+                                            className="rounded-2xl border border-border bg-white p-5 shadow-sm space-y-4"
+                                        >
+                                            <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                                                <div>
+                                                    <h3 className="font-display font-bold text-foreground text-base">
+                                                        Kamar {room.nomor_kamar}
+                                                    </h3>
+                                                    <p className="text-[10px] text-muted">{room.keterangan}</p>
                                                 </div>
-                                            ) : (
-                                                <span className="text-[10px] font-bold text-emerald-600 uppercase">
-                                                    Tersedia
-                                                </span>
-                                            )}
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
+                                                        room.status === 'penuh'
+                                                            ? 'bg-amber-50 text-amber-700'
+                                                            : 'bg-emerald-50 text-emerald-700'
+                                                    }`}>
+                                                        {room.status === 'penuh' ? 'Penuh' : 'Tersedia'}
+                                                    </span>
+                                                    <div className="flex gap-1">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleEditKamar(rumahItem, room)}
+                                                            className="grid size-7 place-items-center rounded-lg text-xs text-muted transition hover:bg-surface"
+                                                            title="Edit Kamar"
+                                                        >
+                                                            ✏️
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteKamar(room.id)}
+                                                            className="grid size-7 place-items-center rounded-lg text-xs text-danger transition hover:bg-rose-50"
+                                                            title="Hapus Kamar"
+                                                        >
+                                                            <Trash2 className="size-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Ranjang Bunk Visualizer */}
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {room.ranjang.map((bed) => {
+                                                    const kasurAtas = bed.kasur.find((k) => k.posisi === 'atas');
+                                                    const kasurBawah = bed.kasur.find((k) => k.posisi === 'bawah');
+
+                                                    return (
+                                                        <div
+                                                            key={bed.id}
+                                                            className="rounded-xl border border-border bg-white overflow-hidden"
+                                                        >
+                                                            <div className="flex items-center justify-between border-b border-border/60 bg-surface/40 px-3 py-1.5">
+                                                                <span className="text-[10px] font-bold text-muted uppercase">
+                                                                    Ranjang {bed.nomor_ranjang}
+                                                                </span>
+                                                                <span className={`text-[9px] font-semibold uppercase ${
+                                                                    bed.status === 'terisi'
+                                                                        ? 'text-primary'
+                                                                        : bed.status === 'sebagian'
+                                                                          ? 'text-amber-600'
+                                                                          : 'text-emerald-600'
+                                                                }`}>
+                                                                    {bed.status === 'terisi'
+                                                                        ? 'Penuh'
+                                                                        : bed.status === 'sebagian'
+                                                                          ? 'Sebagian'
+                                                                          : 'Kosong'}
+                                                                </span>
+                                                            </div>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => kasurAtas && handleKasurClick(rumahItem, room, kasurAtas)}
+                                                                disabled={!kasurAtas || ['maintenance', 'nonaktif'].includes(kasurAtas.status)}
+                                                                className={`flex items-center justify-between gap-2 px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                                                    kasurAtas?.status === 'terisi'
+                                                                        ? 'bg-primary/5 hover:bg-primary/10'
+                                                                        : 'hover:bg-emerald-50/30'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[9px] font-bold uppercase text-muted">
+                                                                        Atas
+                                                                    </span>
+                                                                    <span className="text-[10px] font-bold text-foreground">
+                                                                        {kasurAtas?.student
+                                                                            ? kasurAtas.student.name.length > 14
+                                                                                ? `${kasurAtas.student.name.slice(0, 14)}...`
+                                                                                : kasurAtas.student.name
+                                                                            : 'Kasur Kosong'}
+                                                                    </span>
+                                                                </div>
+                                                                {kasurAtas?.student ? (
+                                                                    <span className="relative grid size-6 shrink-0 place-items-center rounded-lg bg-primary text-white text-[9px] font-bold uppercase">
+                                                                        {kasurAtas.student.name.charAt(0).toUpperCase()}
+                                                                        {kasurAtas.student.is_online && (
+                                                                            <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                                                                        )}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[9px] font-bold uppercase text-emerald-600">
+                                                                        Pilih
+                                                                    </span>
+                                                                )}
+                                                            </button>
+
+                                                            <div className="mx-3 border-t-2 border-border/80" />
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => kasurBawah && handleKasurClick(rumahItem, room, kasurBawah)}
+                                                                disabled={!kasurBawah || ['maintenance', 'nonaktif'].includes(kasurBawah.status)}
+                                                                className={`flex items-center justify-between gap-2 px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                                                    kasurBawah?.status === 'terisi'
+                                                                        ? 'bg-primary/5 hover:bg-primary/10'
+                                                                        : 'hover:bg-emerald-50/30'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[9px] font-bold uppercase text-muted">
+                                                                        Bawah
+                                                                    </span>
+                                                                    <span className="text-[10px] font-bold text-foreground">
+                                                                        {kasurBawah?.student
+                                                                            ? kasurBawah.student.name.length > 14
+                                                                                ? `${kasurBawah.student.name.slice(0, 14)}...`
+                                                                                : kasurBawah.student.name
+                                                                            : 'Kasur Kosong'}
+                                                                    </span>
+                                                                </div>
+                                                                {kasurBawah?.student ? (
+                                                                    <span className="relative grid size-6 shrink-0 place-items-center rounded-lg bg-primary text-white text-[9px] font-bold uppercase">
+                                                                        {kasurBawah.student.name.charAt(0).toUpperCase()}
+                                                                        {kasurBawah.student.is_online && (
+                                                                            <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                                                                        )}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[9px] font-bold uppercase text-emerald-600">
+                                                                        Pilih
+                                                                    </span>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </button>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* Bed Placement / Detail Modal Drawer */}
-            {modalOpen && selectedBed && selectedRoom && (
+            {/* Kasur Placement / Detail Modal */}
+            {modalOpen && selectedKasur && selectedRoom && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <button
                         type="button"
@@ -351,7 +601,7 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                     <div className="relative w-full max-w-md rounded-3xl border border-border bg-white p-6 shadow-soft-modal space-y-6">
                         <div className="flex items-center justify-between border-b border-border/60 pb-3">
                             <h3 className="font-display font-bold text-foreground text-lg">
-                                Kamar {selectedRoom.nomor_kamar} — Ranjang {selectedBed.nomor_ranjang}
+                                {selectedRumah?.nama} — Kamar {selectedRoom.nomor_kamar} — Kasur {selectedKasur.posisi}
                             </h3>
                             <button
                                 type="button"
@@ -362,23 +612,23 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                             </button>
                         </div>
 
-                        {selectedBed.status === 'terisi' && selectedBed.student ? (
+                        {selectedKasur.status === 'terisi' && selectedKasur.student ? (
                             // View Student Details and Vacate Options
                             <div className="space-y-6">
                                 <div className="flex items-center gap-3">
                                     <div className="grid size-12 place-items-center rounded-2xl bg-primary text-white font-bold text-lg">
-                                        {selectedBed.student.name.charAt(0).toUpperCase()}
+                                        {selectedKasur.student.name.charAt(0).toUpperCase()}
                                     </div>
                                     <div>
                                         <div className="flex items-center gap-1.5">
                                             <h4 className="font-display font-bold text-foreground text-base">
-                                                {selectedBed.student.name}
+                                                {selectedKasur.student.name}
                                             </h4>
                                             <span className={`size-2.5 rounded-full ${
-                                                selectedBed.student.is_online ? 'bg-emerald-500' : 'bg-gray-300'
+                                                selectedKasur.student.is_online ? 'bg-emerald-500' : 'bg-gray-300'
                                             }`} />
                                         </div>
-                                        <p className="text-xs text-muted">{selectedBed.student.email}</p>
+                                        <p className="text-xs text-muted">{selectedKasur.student.email}</p>
                                     </div>
                                 </div>
 
@@ -386,15 +636,21 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                                     <div className="flex justify-between">
                                         <span className="text-muted">Program Aktif</span>
                                         <span className="font-semibold text-foreground">
-                                            {selectedBed.student.program}
+                                            {selectedKasur.student.program}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-muted">Posisi Kasur</span>
+                                        <span className="font-semibold text-foreground capitalize">
+                                            {selectedKasur.posisi}
                                         </span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-muted">Status Online</span>
                                         <span className={`font-semibold ${
-                                            selectedBed.student.is_online ? 'text-emerald-600' : 'text-muted'
+                                            selectedKasur.student.is_online ? 'text-emerald-600' : 'text-muted'
                                         }`}>
-                                            {selectedBed.student.is_online ? 'Online' : 'Offline'}
+                                            {selectedKasur.student.is_online ? 'Online' : 'Offline'}
                                         </span>
                                     </div>
                                 </div>
@@ -402,10 +658,10 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                                 <div className="flex justify-end gap-3 pt-2">
                                     <button
                                         type="button"
-                                        onClick={() => handleVacate(selectedBed.id)}
+                                        onClick={() => handleVacate(selectedKasur.id)}
                                         className="inline-flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-600 transition hover:bg-rose-100"
                                     >
-                                        <UserMinus className="size-4" /> Kosongkan Ranjang
+                                        <UserMinus className="size-4" /> Kosongkan Kasur
                                     </button>
                                 </div>
                             </div>
@@ -414,7 +670,7 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                             <div className="space-y-4">
                                 <div className="flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800">
                                     <Info className="size-4 shrink-0" />
-                                    Ranjang kosong. Silakan cari siswa terdaftar untuk ditempatkan.
+                                    Kasur kosong. Silakan cari siswa terdaftar untuk ditempatkan.
                                 </div>
 
                                 <div className="space-y-2">
@@ -520,13 +776,31 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                         <form onSubmit={submitKamar} className="mt-4 space-y-4">
                             <div>
                                 <label className="text-xs font-semibold text-muted block mb-1">
+                                    Rumah
+                                </label>
+                                <select
+                                    required
+                                    value={kamarFormState.rumah_id}
+                                    onChange={(e) => setKamarFormState({ ...kamarFormState, rumah_id: e.target.value })}
+                                    className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary"
+                                >
+                                    {rumah.map((rumahItem) => (
+                                        <option key={rumahItem.id} value={rumahItem.id}>
+                                            {rumahItem.nama}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-semibold text-muted block mb-1">
                                     Nomor Kamar
                                 </label>
                                 <input
                                     type="text"
                                     required
                                     value={kamarFormState.nomor_kamar}
-                                    onChange={(e) => setKamarFormState({...kamarFormState, nomor_kamar: e.target.value})}
+                                    onChange={(e) => setKamarFormState({ ...kamarFormState, nomor_kamar: e.target.value })}
                                     placeholder="Contoh: 01"
                                     className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                                 />
@@ -534,7 +808,7 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
 
                             <div>
                                 <label className="text-xs font-semibold text-muted block mb-1">
-                                    Kapasitas Ranjang
+                                    Kapasitas Ranjang (tingkat)
                                 </label>
                                 <input
                                     type="number"
@@ -542,9 +816,12 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                                     min={1}
                                     max={20}
                                     value={kamarFormState.kapasitas}
-                                    onChange={(e) => setKamarFormState({...kamarFormState, kapasitas: parseInt(e.target.value) || 6})}
+                                    onChange={(e) => setKamarFormState({ ...kamarFormState, kapasitas: parseInt(e.target.value) || 6 })}
                                     className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                                 />
+                                <p className="mt-1 text-[10px] text-muted">
+                                    Setiap ranjang tingkat otomatis memiliki 2 kasur (atas & bawah).
+                                </p>
                             </div>
 
                             <div>
@@ -553,7 +830,7 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                                 </label>
                                 <select
                                     value={kamarFormState.status}
-                                    onChange={(e) => setKamarFormState({...kamarFormState, status: e.target.value})}
+                                    onChange={(e) => setKamarFormState({ ...kamarFormState, status: e.target.value })}
                                     className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary"
                                 >
                                     <option value="tersedia">Tersedia</option>
@@ -568,7 +845,7 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                                 </label>
                                 <textarea
                                     value={kamarFormState.keterangan}
-                                    onChange={(e) => setKamarFormState({...kamarFormState, keterangan: e.target.value})}
+                                    onChange={(e) => setKamarFormState({ ...kamarFormState, keterangan: e.target.value })}
                                     placeholder="Opsional"
                                     rows={2}
                                     className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
@@ -589,6 +866,91 @@ export default function Asrama({ stats, rooms }: AsramaProps) {
                                 >
                                     <Plus className="size-4" />
                                     {editingKamar ? 'Simpan Perubahan' : 'Buat Kamar'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Rumah Management Modal */}
+            {manageRumahOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <button
+                        type="button"
+                        onClick={() => setManageRumahOpen(false)}
+                        className="absolute inset-0 bg-primary/30 backdrop-blur-sm"
+                    />
+                    <div className="relative w-full max-w-lg rounded-3xl border border-border bg-white p-6 shadow-soft-modal">
+                        <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                            <h3 className="font-display font-bold text-foreground text-lg">
+                                {editingRumah ? 'Edit Rumah' : 'Tambah Rumah Baru'}
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setManageRumahOpen(false)}
+                                className="text-muted hover:text-foreground"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <form onSubmit={submitRumah} className="mt-4 space-y-4">
+                            <div>
+                                <label className="text-xs font-semibold text-muted block mb-1">
+                                    Nama Rumah
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={rumahFormState.nama}
+                                    onChange={(e) => setRumahFormState({ ...rumahFormState, nama: e.target.value })}
+                                    placeholder="Contoh: Rumah 01"
+                                    className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-semibold text-muted block mb-1">
+                                    Status
+                                </label>
+                                <select
+                                    value={rumahFormState.status}
+                                    onChange={(e) => setRumahFormState({ ...rumahFormState, status: e.target.value })}
+                                    className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary"
+                                >
+                                    <option value="aktif">Aktif</option>
+                                    <option value="nonaktif">Nonaktif</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-semibold text-muted block mb-1">
+                                    Keterangan
+                                </label>
+                                <textarea
+                                    value={rumahFormState.keterangan}
+                                    onChange={(e) => setRumahFormState({ ...rumahFormState, keterangan: e.target.value })}
+                                    placeholder="Opsional"
+                                    rows={2}
+                                    className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                />
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4 border-t border-border/60">
+                                <button
+                                    type="button"
+                                    onClick={() => setManageRumahOpen(false)}
+                                    className="rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-muted transition hover:bg-surface"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-white shadow-soft transition hover:bg-primary/95"
+                                >
+                                    <Plus className="size-4" />
+                                    {editingRumah ? 'Simpan Perubahan' : 'Buat Rumah'}
                                 </button>
                             </div>
                         </form>

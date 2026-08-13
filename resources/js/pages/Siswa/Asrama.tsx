@@ -4,8 +4,10 @@ import StudentPortalLayout from '@/layouts/StudentPortalLayout';
 interface AsramaProps {
     penempatan: {
         is_assigned: boolean;
+        rumah: string | null;
         kamar: string | null;
         ranjang: string | null;
+        posisi: 'atas' | 'bawah' | null;
         status: string;
         tanggal_masuk: string | null;
         catatan: string | null;
@@ -36,7 +38,7 @@ export default function Asrama({ penempatan }: AsramaProps) {
                                     <CheckCircle2 className="size-3.5" /> Penempatan Aktif
                                 </span>
                                 <h3 className="font-display text-xl font-bold text-foreground">
-                                    Asrama Mahasiswa Al Bayan
+                                    {penempatan.rumah ?? 'Asrama Mahasiswa Al Bayan'}
                                 </h3>
                             </div>
                         </div>
@@ -44,7 +46,7 @@ export default function Asrama({ penempatan }: AsramaProps) {
                         <div className="grid gap-4 sm:grid-cols-2">
                             <div className="rounded-2xl border border-border/80 bg-surface/50 p-5">
                                 <span className="text-xs font-bold tracking-wider text-muted uppercase">
-                                    NOMOR KAMAR
+                                    KAMAR
                                 </span>
                                 <div className="mt-2 font-display text-3xl font-bold text-primary">
                                     Kamar {penempatan.kamar}
@@ -53,10 +55,19 @@ export default function Asrama({ penempatan }: AsramaProps) {
 
                             <div className="rounded-2xl border border-border/80 bg-surface/50 p-5">
                                 <span className="text-xs font-bold tracking-wider text-muted uppercase">
-                                    NOMOR RANJANG
+                                    RANJANG
                                 </span>
                                 <div className="mt-2 font-display text-3xl font-bold text-primary">
                                     Ranjang {penempatan.ranjang}
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-border/80 bg-surface/50 p-5 sm:col-span-2">
+                                <span className="text-xs font-bold tracking-wider text-muted uppercase">
+                                    POSISI KASUR
+                                </span>
+                                <div className="mt-2 font-display text-3xl font-bold text-primary capitalize">
+                                    Kasur {penempatan.posisi}
                                 </div>
                             </div>
                         </div>

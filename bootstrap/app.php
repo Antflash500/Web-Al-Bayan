@@ -3,6 +3,9 @@
 use App\Http\Middleware\CheckUserStatus;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\PreventAuthCaching;
+use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\WebFirewall;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -18,10 +21,22 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->web(prepend: [
+            PreventAuthCaching::class,
+            SecurityHeaders::class,
+            WebFirewall::class,
+        ]);
+
         $middleware->web(append: [
             HandleInertiaRequests::class,
             CheckUserStatus::class,
         ]);
+
+        $trustProxies = array_values(array_filter(array_map('trim', explode(',', (string) env('TRUST_PROXIES', '')))));
+
+        if ($trustProxies !== []) {
+            $middleware->trustProxies(at: $trustProxies);
+        }
 
         $middleware->alias([
             'role' => EnsureRole::class,

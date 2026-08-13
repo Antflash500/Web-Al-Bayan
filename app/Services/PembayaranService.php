@@ -106,12 +106,18 @@ class PembayaranService
                         $penempatan = $this->asramaService->assignRandomBed($user);
 
                         if ($penempatan) {
+                            $kasur = $penempatan->kasur;
+                            $ranjang = $kasur?->ranjang;
+                            $kamar = $ranjang?->kamar;
+
                             SafeBroadcast::run(fn () => BedAssignmentUpdated::dispatch(
                                 $transaksi->user_id,
-                                $penempatan->kamar_id,
-                                $penempatan->ranjang_id,
-                                $penempatan->kamar?->nomor_kamar,
-                                sprintf('%02d', $penempatan->ranjang?->nomor_ranjang ?? 0),
+                                $kamar?->id,
+                                $ranjang?->id,
+                                $kasur?->id,
+                                $kamar?->nomor_kamar,
+                                $ranjang ? sprintf('%02d', $ranjang->nomor_ranjang) : null,
+                                $kasur?->posisi,
                                 'terisi',
                                 'assigned'
                             ));

@@ -9,6 +9,7 @@ import {
     LogOut,
     Menu,
     Megaphone,
+    ShieldCheck,
     Users,
     Wallet,
     X,
@@ -28,6 +29,7 @@ const NAV = [
     { label: 'Pembayaran', href: '/admin/pembayaran', icon: Wallet },
     { label: 'Pengumuman', href: '/admin/announcements', icon: Megaphone },
     { label: 'Asrama', href: '/admin/asrama', icon: Building2 },
+    { label: 'Keamanan', href: '/admin/security', icon: ShieldCheck },
 ];
 
 function NavItem({ href, label, icon: Icon }: (typeof NAV)[number]) {
@@ -58,7 +60,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const adminName =
         auth?.user?.username === 'adminalbayan' ? 'Administrator' : (auth?.user?.username ?? 'Admin');
 
-    useRealtime({ isAdmin: true, reloadProps: ['users', 'programs', 'announcements'] });
+    const isAsramaPage = window.location.pathname.startsWith('/admin/asrama');
+    useRealtime({
+        isAdmin: true,
+        reloadProps: isAsramaPage
+            ? ['rumah', 'stats']
+            : ['users', 'programs', 'announcements'],
+    });
 
     const closeAll = () => {
         setMobileOpen(false);
