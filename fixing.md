@@ -10,7 +10,7 @@ Hostinger otomatis menjalankan:
 composer install --prefer-dist --quiet --no-interaction
 ```
 
-Hasilnya gagal:
+Hasilnya gagal (commit `fix 1` dan `fix 2` — error sama):
 
 ```
 ERROR: install: In Process.php line 147:
@@ -19,67 +19,59 @@ The Process class relies on proc_open, which is not available on your PHP instal
 
 ## Akar Masalah
 
-Hostinger menonaktifkan fungsi `proc_open` (bersama `exec`, `shell_exec`,
-`passthru`) lewat **Disable functions** pada konfigurasi PHP. Composer
-membutuhkan `proc_open` untuk menjalankan script post-install
-(`post-autoload-dump` → `php artisan package:discover`).
+Hostinger menonaktifkan fungsi `proc_open` lewat **Disable functions** di
+konfigurasi PHP. Composer memakai Symfony `Process` (butuh `proc_open`)
+hanya **untuk menjalankan script composer**. Script yang menjalankan
+`php artisan package:discover` di `post-autoload-dump` itulah yang memicu
+error ini — dan `proc_open` **tidak bisa diaktifkan** di paket shared
+Hostinger (fungsi tertentu di-hard-disable).
 
-Ini **bukan** masalah `composer.lock` — lock file sudah kompatibel dengan
-PHP 8.3 (lihat catatan di bawah).
+Jadi fix-nya bukan di hPanel, melainkan **menghilangkan kebutuhan
+`proc_open` dari `composer install`** (lihat di bawah).
 
-## Solusi Utama (paling disarankan)
+## Solusi yang Diterapkan (repo)
 
-1. Login ke **hPanel** Hostinger.
-2. Buka **Advanced → PHP Configuration**.
-3. Pastikan versi PHP = **8.3**.
-4. Cari kolom **Disable functions**.
-5. **Hapus `proc_open`** dari daftar (jangan hapus fungsi lain).
-6. Klik **Save**, lalu **Redeploy** proyek dari hPanel.
+1. **Hapus script composer yang dipanggil via Process** dari `composer.json`:
+   - `post-autoload-dump` (yang memanggil `@php artisan package:discover`)
+   - `post-update-cmd` (yang memanggil `@php artisan vendor:publish`)
 
-Setelah itu `composer install` berjalan normal.
+   Tanpa script itu, `composer install` berjalan murni tanpa memanggil
+   `proc_open` → auto-deploy Hostinger sukses.
 
-> Karena deploy memakai Git, pastikan perubahan ini juga di-commit ke
-> `Antflash500/Web-Al-Bayan` supaya Hostinger mengambil versi termutakhir
-> (misal tombol **Deploy** di hPanel menarik commit terbaru).
+2. **Commit `bootstrap/cache/packages.php`** yang sudah berisi manifest
+   paket hasil `package:discover` (dibuat lokal, 10 paket). Laravel tetap
+   mengenali seluruh service provider meski `discover` tidak jalan di server.
+   `bootstrap/cache/.gitignore` sudah di-whitelist (`!packages.php`) sehingga
+   file ini selalu ikut ter-commit.
 
-## Solusi Alternatif (jika tidak bisa ubah Disable functions)
+   > Catatan: `ComposerScripts::postAutoloadDump` umumnya juga menghapus
+   > `packages.php`. Karena script itu sudah dihapus, file yang dikomit
+   > tetap aman dan dipakai Laravel.
 
-### Opsi A — Deploy manual via SSH
+3. `composer.lock` tetap kompatibel PHP 8.3 (platform di-pin di
+   `composer.json`), terverifikasi: `composer validate` valid & install dry-run
+   sukses untuk 91 paket.
 
-Hostinger menyediakan akses SSH (aktifkan di hPanel → Advanced → SSH Access).
-Lalu:
+## Kalau Menambah/Mengganti Dependency (langkah maintainer)
+
+Karena `package:discover` tidak dijalankan otomatis di server, setelah
+`composer require/update` di lokal, wajib jalankan lalu commit ulang manifest:
 
 ```bash
-cd ~/domains/albayaneducation.com/public_html
-
-# instal dependensi tanpa menjalankan script (tidak butuh proc_open)
-composer install --no-dev --no-scripts --optimize-autoloader
-
-# jalankan discover + cache manual
+composer install
 php artisan package:discover --ansi
-php artisan optimize --ansi
+git add bootstrap/cache/packages.php composer.json composer.lock
+git commit -m "chore: update packages"
+git push origin main
 ```
-
-### Opsi B — Upload manual via FTP/File Manager
-
-1. Jalankan `composer install --no-dev` di komputer lokal (sudah kompatibel dengan PHP 8.3).
-2. Upload seluruh folder project ke `public_html` via FTP/File Manager
-   (termasuk folder `vendor/` hasil install lokal).
-3. Sesuaikan `.env` dan permission `storage/` + `bootstrap/cache/`.
-
-## Catatan Project Ini (sudah dikerjakan)
-
-- `composer.json` sudah mem-pin `config.platform.php = 8.3.0`, sehingga
-  `composer.lock` hanya berisi paket yang kompatibel dengan PHP 8.3 Hostinger.
-  (Sebelumnya lock dikunci dengan PHP 8.5 → symfony butuh PHP ≥ 8.4 → error
-  "lock file does not contain a compatible set of packages".)
-- Remote repo sudah benar: `origin = https://github.com/Antflash500/Web-Al-Bayan`.
 
 ## Checklist Deploy Git
 
-- [ ] Ahli: commit & push semua perubahan ke `main` di GitHub.
-- [ ] hPanel: PHP 8.3, hapus `proc_open` dari Disable functions.
-- [ ] hPanel: Deploy from Git → Deploy ke `public_html`.
+- [x] `composer.json`: script `post-autoload-dump` & `post-update-cmd` dihapus.
+- [x] `bootstrap/cache/packages.php` ikut di-commit (`.gitignore` di-whitelist).
+- [x] `composer validate` OK; install dry-run sukses (91 paket, PHP 8.3).
+- [ ] Commit & push ke `main` di GitHub, lalu **Deploy** ulang dari hPanel.
 - [ ] Buat/sesuaikan `.env` di `public_html` (kredensial DB Hostinger + `APP_KEY`).
 - [ ] Jalankan migrasi: `php artisan migrate --force` (via SSH / Site tools).
-- [ ] Pastikan storage link: `php artisan storage:link` dan permission `storage/` & `bootstrap/cache/` writable.
+- [ ] Pastikan storage link: `php artisan storage:link`; permission `storage/`
+      & `bootstrap/cache/` writable.
