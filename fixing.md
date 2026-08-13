@@ -1,86 +1,57 @@
-Ubah layout halaman "Profil Saya" mengikuti konsep kotak dalam kotak seperti gambar contoh pertama.
+# Fix: "The Process class relies on proc_open, which is not available"
 
-Saat ini semua data berada dalam 1 kotak besar. Saya ingin:
+## Gejala
 
-1. Buat 1 kotak besar sebagai container utama.
+Saat menjalankan `composer install` di server Hostinger muncul error:
 
-2. Di dalam kotak besar tersebut buat 2 kotak/card terpisah:
+```
+ERROR: install: In Process.php line 147:
+The Process class relies on proc_open, which is not available on your PHP installation.
+```
 
-   KOTAK 1: "Data Diri"
-   - Judul: Data Diri
-   - Di bawah judul beri deskripsi singkat:
-     "Kelola data diri dan informasi akun Anda."
-   - Isi tetap menggunakan semua data yang sudah ada sekarang:
-     Nama Lengkap
-     NIK
-     Username
-     Tanggal Lahir
-     Status Akun
-     Nomor Telepon / WA
-     Jenis Kelamin
-     Alamat Lengkap
+## Penyebab
 
-   KOTAK 2: "Data Orang Tua"
-   - Judul: Data Orang Tua
-   - Di bawah judul beri deskripsi singkat:
-     "Kelola informasi orang tua atau wali Anda."
+Hostinger menonaktifkan fungsi `proc_open` (dan sering juga `exec`, `shell_exec`,
+`passthru`) lewat daftar `disable_functions` pada konfigurasi PHP. Composer
+membutuhkan `proc_open` untuk menjalankan script (misal `@php artisan package:discover`).
 
-   Di dalam Data Orang Tua buat 2 bagian:
-   
-   AYAH
-   - Nama Ayah
-   - Alamat
-   - Pekerjaan
-   - Nomor HP
+## Solusi Utama (disarankan) — Aktifkan proc_open di hPanel
 
-   IBU
-   - Nama Ibu
-   - Alamat
-   - Pekerjaan
-   - Nomor HP
+1. Login ke hPanel Hostinger.
+2. Buka **Advanced → PHP Configuration**.
+3. Pilih versi PHP (harus **8.3**).
+4. Cari kolom **Disable functions**.
+5. **Hapus `proc_open`** dari daftar tersebut (hilangkan saja, biarkan fungsi lain).
+6. Klik **Save**.
 
-3. Kedua kotak/card tersebut harus bisa diedit.
+Setelah itu jalankan ulang dari terminal/SSH:
 
-4. Tambahkan tombol "Edit Profil".
-   - Saat belum dalam mode edit, data ditampilkan seperti tampilan profil biasa.
-   - Saat tombol "Edit Profil" ditekan, field pada Data Diri dan Data Orang Tua menjadi bisa diedit.
+```bash
+composer install --no-dev --optimize-autoloader
+```
 
-5. Saat mode edit aktif, tampilkan tombol "Simpan Perubahan".
-   - Tombol ini menyimpan perubahan seperti logic penyimpanan yang sudah ada.
-   - Jangan membuat logic penyimpanan baru jika logic existing sudah tersedia.
+## Solusi Alternatif — Lewati script composer
 
-6. Pertahankan semua data, API, database, validasi, dan logic yang sudah ada.
-   Jangan mengubah backend atau struktur data.
+Jika tidak bisa mengubah konfigurasi PHP, instal tanpa menjalankan script,
+lalu paksa artisan untuk menemukan paket:
 
-7. Fokus perubahan hanya pada layout dan UI halaman Profil Saya.
+```bash
+composer install --no-dev --no-scripts --optimize-autoloader
+php artisan package:discover
+php artisan optimize
+```
 
-8. Gunakan desain yang sama dengan website sekarang:
-   - warna hijau yang sudah digunakan
-   - border lembut
-   - rounded corner
-   - spacing rapi
-   - tampilan modern dan clean
-   - responsive desktop dan mobile
+> Catatan: `--no-scripts` mencegah `@php artisan package:discover` berjalan otomatis.
+> Karena itu `package:discover` dijalankan manual setelahnya.
 
-Struktur akhirnya:
+## Catatan Project Ini
 
-Kotak Besar
-├── Data Diri
-│   ├── Judul + deskripsi
-│   └── Semua data diri yang sudah ada
-│
-└── Data Orang Tua
-    ├── Judul + deskripsi
-    ├── Ayah
-    │   ├── Nama
-    │   ├── Alamat
-    │   ├── Pekerjaan
-    │   └── Nomor HP
-    │
-    └── Ibu
-        ├── Nama
-        ├── Alamat
-        ├── Pekerjaan
-        └── Nomor HP
-
-Jangan mengubah halaman lain dan jangan melakukan refactor besar-besaran. Gunakan komponen dan logic yang sudah ada jika memungkinkan.
+- `composer.json` sudah mem-pin `config.platform.php` ke `8.3.0`, sehingga
+  `composer.lock` hanya berisi paket yang kompatibel dengan PHP 8.3 Hostinger.
+- Jangan upload `.env`. Buat `.env` baru di Hostinger (isi kredensial DB +
+  `APP_KEY` hasil `php artisan key:generate`).
+- Folder yang wajib upload: `app/`, `bootstrap/`, `config/`, `database/`,
+  `public/`, `resources/`, `routes/`, `vendor/` (hasil `composer install` di
+  server), `composer.json`, `composer.lock`, `artisan`.
+- Setelah deploy, pastikan permission `storage/` dan `bootstrap/cache/` bisa
+  ditulis (biasanya otomatis di Hostinger).
