@@ -1,57 +1,85 @@
-# Fix: "The Process class relies on proc_open, which is not available"
+# Fix: Deploy Laravel ke Hostinger — "proc_open is not available"
 
-## Gejala
+## Konteks
 
-Saat menjalankan `composer install` di server Hostinger muncul error:
+Repo di-deploy ke Hostinger via **Deploy from Git** (auto-clone dari
+`https://github.com/Antflash500/Web-Al-Bayan.git`, branch `main`), lalu
+Hostinger otomatis menjalankan:
+
+```
+composer install --prefer-dist --quiet --no-interaction
+```
+
+Hasilnya gagal:
 
 ```
 ERROR: install: In Process.php line 147:
 The Process class relies on proc_open, which is not available on your PHP installation.
 ```
 
-## Penyebab
+## Akar Masalah
 
-Hostinger menonaktifkan fungsi `proc_open` (dan sering juga `exec`, `shell_exec`,
-`passthru`) lewat daftar `disable_functions` pada konfigurasi PHP. Composer
-membutuhkan `proc_open` untuk menjalankan script (misal `@php artisan package:discover`).
+Hostinger menonaktifkan fungsi `proc_open` (bersama `exec`, `shell_exec`,
+`passthru`) lewat **Disable functions** pada konfigurasi PHP. Composer
+membutuhkan `proc_open` untuk menjalankan script post-install
+(`post-autoload-dump` → `php artisan package:discover`).
 
-## Solusi Utama (disarankan) — Aktifkan proc_open di hPanel
+Ini **bukan** masalah `composer.lock` — lock file sudah kompatibel dengan
+PHP 8.3 (lihat catatan di bawah).
 
-1. Login ke hPanel Hostinger.
+## Solusi Utama (paling disarankan)
+
+1. Login ke **hPanel** Hostinger.
 2. Buka **Advanced → PHP Configuration**.
-3. Pilih versi PHP (harus **8.3**).
+3. Pastikan versi PHP = **8.3**.
 4. Cari kolom **Disable functions**.
-5. **Hapus `proc_open`** dari daftar tersebut (hilangkan saja, biarkan fungsi lain).
-6. Klik **Save**.
+5. **Hapus `proc_open`** dari daftar (jangan hapus fungsi lain).
+6. Klik **Save**, lalu **Redeploy** proyek dari hPanel.
 
-Setelah itu jalankan ulang dari terminal/SSH:
+Setelah itu `composer install` berjalan normal.
+
+> Karena deploy memakai Git, pastikan perubahan ini juga di-commit ke
+> `Antflash500/Web-Al-Bayan` supaya Hostinger mengambil versi termutakhir
+> (misal tombol **Deploy** di hPanel menarik commit terbaru).
+
+## Solusi Alternatif (jika tidak bisa ubah Disable functions)
+
+### Opsi A — Deploy manual via SSH
+
+Hostinger menyediakan akses SSH (aktifkan di hPanel → Advanced → SSH Access).
+Lalu:
 
 ```bash
-composer install --no-dev --optimize-autoloader
-```
+cd ~/domains/albayaneducation.com/public_html
 
-## Solusi Alternatif — Lewati script composer
-
-Jika tidak bisa mengubah konfigurasi PHP, instal tanpa menjalankan script,
-lalu paksa artisan untuk menemukan paket:
-
-```bash
+# instal dependensi tanpa menjalankan script (tidak butuh proc_open)
 composer install --no-dev --no-scripts --optimize-autoloader
-php artisan package:discover
-php artisan optimize
+
+# jalankan discover + cache manual
+php artisan package:discover --ansi
+php artisan optimize --ansi
 ```
 
-> Catatan: `--no-scripts` mencegah `@php artisan package:discover` berjalan otomatis.
-> Karena itu `package:discover` dijalankan manual setelahnya.
+### Opsi B — Upload manual via FTP/File Manager
 
-## Catatan Project Ini
+1. Jalankan `composer install --no-dev` di komputer lokal (sudah kompatibel dengan PHP 8.3).
+2. Upload seluruh folder project ke `public_html` via FTP/File Manager
+   (termasuk folder `vendor/` hasil install lokal).
+3. Sesuaikan `.env` dan permission `storage/` + `bootstrap/cache/`.
 
-- `composer.json` sudah mem-pin `config.platform.php` ke `8.3.0`, sehingga
+## Catatan Project Ini (sudah dikerjakan)
+
+- `composer.json` sudah mem-pin `config.platform.php = 8.3.0`, sehingga
   `composer.lock` hanya berisi paket yang kompatibel dengan PHP 8.3 Hostinger.
-- Jangan upload `.env`. Buat `.env` baru di Hostinger (isi kredensial DB +
-  `APP_KEY` hasil `php artisan key:generate`).
-- Folder yang wajib upload: `app/`, `bootstrap/`, `config/`, `database/`,
-  `public/`, `resources/`, `routes/`, `vendor/` (hasil `composer install` di
-  server), `composer.json`, `composer.lock`, `artisan`.
-- Setelah deploy, pastikan permission `storage/` dan `bootstrap/cache/` bisa
-  ditulis (biasanya otomatis di Hostinger).
+  (Sebelumnya lock dikunci dengan PHP 8.5 → symfony butuh PHP ≥ 8.4 → error
+  "lock file does not contain a compatible set of packages".)
+- Remote repo sudah benar: `origin = https://github.com/Antflash500/Web-Al-Bayan`.
+
+## Checklist Deploy Git
+
+- [ ] Ahli: commit & push semua perubahan ke `main` di GitHub.
+- [ ] hPanel: PHP 8.3, hapus `proc_open` dari Disable functions.
+- [ ] hPanel: Deploy from Git → Deploy ke `public_html`.
+- [ ] Buat/sesuaikan `.env` di `public_html` (kredensial DB Hostinger + `APP_KEY`).
+- [ ] Jalankan migrasi: `php artisan migrate --force` (via SSH / Site tools).
+- [ ] Pastikan storage link: `php artisan storage:link` dan permission `storage/` & `bootstrap/cache/` writable.
